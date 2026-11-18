@@ -1,0 +1,593 @@
+# Design Document
+
+## Overview
+
+Das Kulturbarometer ist eine Webapplikation, die den gelebten Ist-Zustand der Unternehmenskultur erhebt. Sie besteht aus zwei klar getrennten Zugangsbereichen:
+
+- **Administrationsbereich** (authentifiziert): Verwaltung von Unternehmenswerten, Fokussätzen, KI-gestützter Item-Generierung und -Verfeinerung, Item-Export/-Import, Items samt Freigabe-Workflow, Kampagnen, Verteilung, Auswertung und Export.
+- **Teilnahmebereich** (anonym): Beantwortung der Umfrage einer aktiven Kampagne über einen öffentlichen Kampagnen-Link oder einen individuellen Einmal-Link.
+
+Das zentrale fachliche Alleinstellungsmerkmal ist die **dreifache Perspektive** (Selbst, Team, Führung): Jedes Item trägt genau eine in seiner Formulierung ausgedrückte Perspektive, und der gewichtete **Ist-Score** wird je Unternehmenswert **und** je Perspektive getrennt berechnet. Hinzu kommen zwei Wege der Item-Entstehung (**KI-gestützte Generierung/Verfeinerung** über einen API-Zugang oder **JSON-Export/-Import** für externe Erstellung), ein **Item-Statusmodell** (zur Prüfung → freigegeben → deaktiviert), zwei **anonymitätswahrende Verteilmodi**, eine **zufällige Teilnehmer-Teilmenge** je Teilnehmer und ein **Kampagnen-Snapshot**, der reproduzierbare Berechnungen über die Zeit erlaubt. Der Snapshot ist nach Aktivierung unveränderlich; einzige Ausnahme ist die **Deaktivierung einzelner Items** während einer laufenden Kampagne, um missverstandene Items aus der Wertung zu nehmen.
+
+Dieses Dokument beschreibt die Architektur, den Technologie-Stack, das Datenmodell, die Komponenten, die zentralen Abläufe, die Korrektheitseigenschaften (für Property-Based Testing), die Fehlerbehandlung sowie ein Sicherheits- und Datenschutzkonzept, das die Anonymität der Teilnehmer in den Mittelpunkt stellt.
+
+### Designziele und Leitprinzipien
+
+- **Anonymität by design**: Keine personenbezogenen Identifikationsdaten (Name, E-Mail, IP, Benutzerkennung) werden zusammen mit Antworten gespeichert. Im E-Mail-Verteilmodus wird die Adresse ausschließlich transient zum Versand verwendet und nie persistiert (Anforderung 7.7, 8.9).
+- **Reproduzierbarkeit**: Der Kampagnen-Snapshot friert Items, Werte-Zuordnungen und Gewichtungen bei Aktivierung ein, sodass Berechnungen und Verlauf stabil bleiben (Anforderung 6.11, 6.12, 6.21). Die einzige zulässige Änderung ist das Setzen von `deactivatedAt` an einem SnapshotItem (6.12, 6.13); Texte, Zuordnungen und Gewichtungen bleiben unverändert.
+- **Qualitätssicherung der Items**: Nur freigegebene Items gelangen in Kampagnen-Pools und Umfragen (5.17, 6.5). Items aus KI und Import durchlaufen denselben Prüf- und Freigabe-Workflow.
+- **Austauschbarkeit der KI**: Die LLM-Anbindung ist als Port/Adapter gekapselt, sodass der konkrete Anbieter ersetzbar ist und KI-Ausgaben als nicht vertrauenswürdig behandelt werden (Anforderung 3).
+- **Importierte Dateien sind nicht vertrauenswürdig**: Item-Importe werden wie externe Eingaben mit derselben strikten Validierung wie manuell erfasste Items behandelt (Anforderung 4).
+- **Trennung der Bereiche**: Administration und Teilnahme laufen über getrennte Routen, Middleware und Berechtigungen (Anforderung 1.4).
+
+### Technologie-Stack (Vorschlag und Begründung)
+
+Für eine kleine bis mittlere Webapplikation mit einem authentifizierten Adminbereich, einem anonymen Teilnahmebereich und moderater Rechenlast wird folgender Stack vorgeschlagen:
+
+| Schicht | Technologie | Begründung |
+| --- | --- | --- |
+| Frontend | **React + TypeScript** (Vite, React Router, TanStack Query) | Komponentenbasierte UI für Admin-Formulare und den Schieberegler-Survey; TypeScript teilt Typen mit dem Backend; TanStack Query vereinfacht Server-State. |
+| Backend | **Node.js + TypeScript mit NestJS** (oder Fastify) | Ein Sprach-/Typ-Ökosystem über Front- und Backend; NestJS bietet Module, DI und Guards, was die Trennung Admin/Teilnahme und die Auth-Middleware sauber abbildet. |
+| Persistenz | **PostgreSQL** via **Prisma ORM** | Relationales Modell passt zu den stark verknüpften Entitäten (Wert↔Item↔Zuordnung↔Kampagne); transaktionale Integrität für Snapshot-Erzeugung, Deaktivierung und Antwort-Speicherung; `NUMERIC` für exakte Dezimalbewertungen. |
+| Authentifizierung | **Serverseitige Sessions** (signierte, HTTP-only Session-Cookies) mit Session-Store in PostgreSQL/Redis; Passwort-Hashing mit **Argon2id** | Serverseitige Sessions erlauben sofortige Invalidierung bei Logout (Anforderung 1.5) und Inaktivitäts-Timeout (Anforderung 1.6); Lockout-Zähler serverseitig (Anforderung 1.3). |
+| LLM-Integration | **Port/Adapter** (`ItemGenerationPort`) mit konkretem Adapter (z. B. OpenAI/Azure OpenAI/Bedrock), austauschbar per Konfiguration | Entkoppelt Kerndomäne vom Anbieter; erlaubt Mock-Adapter in Tests; strukturierte Ausgabe wird validiert, bevor sie als Vorschlag erscheint. |
+| E-Mail-Versand | **SMTP/Transactional-Mail-Adapter** (z. B. Nodemailer über einen Provider) | Nur transienter Versand der Einmal-Links; keine Persistenz der Adresse. |
+| Validierung | **Zod** (Frontend + Backend); JSON-Schema-Ausgabe für den Item-Export aus dem Zod-Schema (z. B. `z.toJSONSchema` ab Zod 4 bzw. `zod-to-json-schema`) | Geteilte Schema-Validierung für Eingaben (Textlängen, Gewichtungsbereiche, Bewertungsbereich). Ein einziges **geteiltes Item-Schema** dient ItemsModule, ItemGenerationModule und ItemExchangeModule; die Schemabeschreibung des Exports wird daraus abgeleitet und kann so nicht von der Validierung abweichen. |
+| Tests | **Vitest/Jest** + **fast-check** (Property-Based Testing) | fast-check deckt die universellen Eigenschaften der Ist-Score-Mathematik, der Teilmengen-Ziehung, der Deaktivierung und des Import-Round-Trips über viele Eingaben ab. |
+
+Der Stack ist bewusst gängig und leichtgewichtig; PostgreSQL + Prisma deckt die relationalen Anforderungen und die exakte Dezimalarithmetik ab, ohne eine schwergewichtige Infrastruktur zu erfordern. Alternativen (z. B. Python/FastAPI + SQLAlchemy, Hypothesis für PBT) sind möglich; die Designentscheidungen unten bleiben technologie-unabhängig gültig.
+
+## Architecture
+
+### Systemüberblick
+
+```mermaid
+graph TB
+    subgraph Client
+        AdminUI[Admin-SPA<br/>React/TS]
+        SurveyUI[Teilnahme-SPA<br/>React/TS]
+    end
+
+    subgraph Server[Backend - NestJS]
+        AuthMW[Auth-/Session-Middleware<br/>+ Guards]
+        AdminAPI[Admin-API<br/>Werte, Items, Export/Import, Kampagnen, Auswertung, Export]
+        PublicAPI[Teilnahme-API<br/>Survey, Antwort-Submit]
+        AppSvc[Domain-/Application-Services]
+        GenPort[ItemGenerationPort<br/>generate / refine]
+        MailPort[MailPort]
+    end
+
+    subgraph Adapters
+        LLMAdapter[LLM-Adapter<br/>konkreter Anbieter]
+        MailAdapter[Mail-Adapter<br/>SMTP]
+    end
+
+    DB[(PostgreSQL<br/>Prisma)]
+    Sessions[(Session-Store)]
+
+    AdminUI -->|authentifiziert| AuthMW --> AdminAPI --> AppSvc
+    SurveyUI -->|anonym| PublicAPI --> AppSvc
+    AppSvc --> DB
+    AuthMW --> Sessions
+    AppSvc --> GenPort --> LLMAdapter
+    AppSvc --> MailPort --> MailAdapter
+```
+
+### Schichtenmodell
+
+- **Präsentations-/API-Schicht**: Zwei getrennte Router-Gruppen. Admin-Routen sind durch eine Auth-Guard geschützt (Anforderung 1.4). Teilnahme-Routen sind öffentlich, aber an Link-/Token-Gültigkeit und Kampagnenstatus gebunden (Anforderung 7, 8).
+- **Application-/Domain-Schicht**: Reine Fachlogik (Validierungsregeln, Item-Statusübergänge, Ist-Score-Berechnung, Teilmengen-Ziehung, Snapshot-Erzeugung, Import-Prüfung). Diese Schicht ist frei von I/O und damit gut per PBT testbar.
+- **Infrastruktur-/Adapter-Schicht**: Persistenz (Prisma), LLM-Port, Mail-Port, Session-Store. Ports isolieren externe, nicht vertrauenswürdige bzw. austauschbare Abhängigkeiten.
+
+### Trennung von Admin und Teilnahme
+
+Die beiden Bereiche teilen sich dieselbe Codebasis, aber getrennte Einstiegspunkte und Berechtigungen. Ein nicht authentifizierter Aufruf einer Admin-Funktion wird von der Guard abgewiesen und auf die Anmeldeseite umgeleitet, ohne Funktionsdaten auszuliefern (Anforderung 1.4). Teilnahme-Endpunkte geben niemals Admin-Daten oder Rohantworten anderer Teilnehmer aus.
+
+### Item-Statusmodell
+
+Jedes Item besitzt genau einen Status (5.12). Es gibt keine separate Entwurfs-Entität: Ein generierter oder importierter Vorschlag ist einfach ein `Item` im Status `ZUR_PRUEFUNG`. Begründung: GeneratedItemDraft und Item hätten dieselben Felder, dieselben Validierungsregeln (3.6, 3.7, 3.10, 4.4 verweisen auf Anforderung 5) und dieselben Aktionen (bearbeiten, verfeinern, freigeben, verwerfen). Ein einziges Modell vermeidet Kopier-/Mapping-Logik und doppelte Validierung.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ZUR_PRUEFUNG: anlegen / KI-Generierung / Import (3.8, 4.6, 5.1)
+    ZUR_PRUEFUNG --> FREIGEGEBEN: freigeben, Regeln erfüllt (5.13)
+    ZUR_PRUEFUNG --> ZUR_PRUEFUNG: bearbeiten / KI-Verfeinerung (3.13, 5.18)
+    ZUR_PRUEFUNG --> [*]: verwerfen / löschen (3.11, 5.19)
+    FREIGEGEBEN --> ZUR_PRUEFUNG: bearbeiten (5.15)
+    FREIGEGEBEN --> DEAKTIVIERT: deaktivieren (5.16, 6.13)
+    DEAKTIVIERT --> FREIGEGEBEN: überarbeiten + erneut freigeben (5.13, 6.20)
+    DEAKTIVIERT --> ZUR_PRUEFUNG: bearbeiten / KI-Verfeinerung (3.13, 5.18)
+```
+
+Regeln:
+- **Freigabe** (`approveItem`) wendet dieselben Gültigkeitsregeln wie die Item-Verwaltung an (5.1–5.9). Bei Verletzung bleibt der Status erhalten, die Fehlermeldung benennt die verletzte Regel (5.14).
+- **Bearbeiten eines freigegebenen Items** setzt den Status auf `ZUR_PRUEFUNG` (5.15); bestehende Snapshots bleiben unberührt (5.24).
+- **Nur `FREIGEGEBEN`** darf einem Kampagnen-Pool zugeordnet werden (5.17, 6.4, 6.5); die Aktivierung prüft den Pool erneut und scheitert bei nicht freigegebenen Items (6.9).
+- **Deaktivierung in laufender Kampagne** setzt zusätzlich `SnapshotItem.deactivatedAt` und den Quell-Item-Status auf `DEAKTIVIERT` (6.13).
+
+## Components and Interfaces
+
+Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Validierungsregeln und Anwendungsfälle.
+
+### AuthModule (Anforderung 1)
+
+- Verantwortlich für Anmeldung, Abmeldung, Session-Erzeugung/-Invalidierung, Lockout und Inaktivitäts-Timeout.
+- Schlüsselschnittstellen:
+  - `login(credentials) -> Session | AuthError` – erstellt Session bei gültigen Daten (1.1), lehnt generisch ab (1.2), berücksichtigt Lockout (1.3).
+  - `logout(sessionId) -> void` – beendet Session sofort und invalidiert Token (1.5).
+  - `AuthGuard` – schützt alle Admin-Routen (1.4) und erzwingt Inaktivitäts-Timeout von 30 Minuten (1.6).
+  - `LoginAttemptPolicy` – zählt fehlgeschlagene Versuche je Benutzer in einem 15-Minuten-Fenster; sperrt nach 5 Fehlversuchen für mindestens 15 Minuten (1.3).
+
+### ValuesModule – Unternehmenswerte & Fokussätze (Anforderung 2)
+
+- `createValue`, `updateValue`, `deleteValue`, `listValues`.
+- `addFocusSentence`, `updateFocusSentence`, `removeFocusSentence`.
+- Regeln: Name 1–100 Zeichen, eindeutig und nicht nur Leerzeichen (2.1–2.3); Beschreibung 0–1.000 Zeichen; Fokussatz 1–500 Zeichen (2.4, 2.5); Löschschutz bei aktiver Kampagnenzuordnung (2.8, 2.9); Leerzustand-Hinweis (2.11).
+
+### ItemGenerationModule – KI-gestützte Generierung und Verfeinerung (Anforderung 3)
+
+- `generateItems(valueId) -> Item[]` – erzeugt je Fokussatz drei Varianten (Selbst/Team/Führung) über den `ItemGenerationPort` (3.1, 3.3). Die validierten Ergebnisse werden als `Item` im Status `ZUR_PRUEFUNG` angelegt (3.8).
+- `refineItem(itemId, instruction?) -> Item` – nur für Items im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT`; `instruction` 0–1.000 Zeichen (3.13). Das validierte Ergebnis wird atomar am Item gespeichert und setzt den Status auf `ZUR_PRUEFUNG` (3.13, 5.18); das verfeinerte Item wird erst nach erneuter Freigabe verwendet (3.14).
+- `ItemGenerationPort` (Abstraktion):
+  - `generate(input: ValueGenerationContext) -> RawItemSuggestion[]`
+  - `refine(item: ItemSnapshotForAi, valueContext: ValueGenerationContext[], instruction?: string) -> RawItemSuggestion` – `valueContext` enthält Name, Beschreibung und Fokussätze aller dem Item zugeordneten Unternehmenswerte (3.13).
+  - Konkrete Adapter (OpenAI/Azure/Bedrock/Mock) implementieren den Port; Auswahl per Konfiguration.
+  - **Nicht vertrauenswürdige Ausgabe**: Jede Rohantwort von `generate` **und** `refine` wird gegen dasselbe strikte, geteilte Zod-Item-Schema validiert und bereinigt (Perspektive ∈ {Selbst, Team, Führung}, Item-Typ ∈ {Frage, Situation/Use-Case}, Text 1–500, Gewichtungen 0–100 %, mindestens eine Zuordnung > 0 %, Werte-Referenzen müssen existieren), bevor sie als Vorschlag erscheint (3.4, 3.5, 3.8).
+- Prüf-Workflow über ItemsModule: `updateItem` (3.6, 3.7, 3.10), `approveItem` (3.9), `deleteItem` als Verwerfen eines Vorschlags (3.11).
+- Fehlerfall Generierung: Schlägt sie fehl oder ist die Ausgabe ungültig, gilt immer die Konjunktion aus: keine Items gespeichert, Wert-Vorgaben unverändert und Fehlermeldung mit Wiederholungshinweis (3.12). Fehlender Fokussatz blockiert die Generierung (3.2).
+- Fehlerfall Verfeinerung: Schlägt `refine` fehl oder ist die Ausgabe ungültig, wird **keine** Änderung am Item gespeichert, Item und Wert-Vorgaben bleiben unverändert, und es erscheint eine Fehlermeldung mit Wiederholungshinweis (3.15). Zur Atomarität läuft Validierung vor dem Schreiben; das Speichern erfolgt in einer Transaktion.
+
+### ItemExchangeModule – Item-Export und -Import (Anforderung 4)
+
+- `exportItemSpecification() -> ItemExportFile | ExportError` – erzeugt eine JSON-Datei mit allen Unternehmenswerten (Name, Beschreibung, Fokussätze) und einer Schemabeschreibung (JSON Schema) für Items (4.1). Das JSON Schema wird aus dem geteilten Zod-Item-Schema abgeleitet und beschreibt Item-Text (1–500), Item-Typ, genau eine Perspektive sowie Werte-Zuordnungen mit `valueName` und Gewichtung 0–100 (4.2). Existiert kein Unternehmenswert, wird der Export abgelehnt, keine Datei erzeugt und ein Fehler mit Hinweis auf fehlende Werte geliefert (4.3).
+- `importItems(fileContent: string) -> ImportReport | ImportRejected` – siehe Ablauf unten.
+- Beispiel-Struktur der Datei:
+
+```json
+{
+  "schemaVersion": 1,
+  "values": [
+    { "name": "Vertrauen", "description": "…", "focusSentences": ["…"] }
+  ],
+  "itemSchema": { "$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "…": "…" },
+  "items": [
+    {
+      "text": "Ich halte zugesagte Termine ein",
+      "itemType": "FRAGE",
+      "perspective": "SELBST",
+      "assignments": [ { "valueName": "Vertrauen", "weight": 80 } ]
+    }
+  ]
+}
+```
+
+- **Importablauf**:
+  1. **Sicheres Parsen (nicht vertrauenswürdige Datei)**: Maximale Dateigröße (z. B. 2 MB) und maximale Item-Anzahl (z. B. 1.000) werden vor dem Parsen bzw. direkt danach geprüft; Überschreitung lehnt den gesamten Import ab. Geparst wird ausschließlich mit `JSON.parse` in einem try/catch (kein `eval`, keine Template-Ausführung); Zod-Schemata arbeiten im `strict`-Modus, unbekannte Schlüssel wie `__proto__` führen nicht zur Übernahme in Objekte. Item-Texte werden nie als HTML gerendert, sondern im Frontend als Text ausgegeben.
+  2. **Top-Level-Prüfung**: Die Datei muss gültiges JSON sein und dem Top-Level-Schema entsprechen (Objekt mit `items`-Array, optional `schemaVersion`; `values` und `itemSchema` werden ignoriert). Andernfalls wird der **gesamte Import abgelehnt**, kein Item gespeichert, Fehler „ungültiger Dateiaufbau" (4.8).
+  3. **Item-Prüfung**: Jedes Element von `items` wird mit demselben geteilten Zod-Item-Schema wie im ItemsModule geprüft (4.4). Zusätzlich werden die Werte-Referenzen aufgelöst.
+  4. **Auflösung der Werte-Referenzen**: über `valueName` mit **exaktem** (case-sensitiven, nicht getrimmten) Abgleich auf `Value.name`; Namen sind eindeutig (2.3), die Zuordnung ist daher deterministisch. Unbekannter Name → Item ungültig (4.5). Doppelte `valueName` innerhalb eines Items werden als ungültig abgelehnt (entspricht der DB-Eindeutigkeit je Item/Wert).
+  5. **Anlegen**: Gültige Items werden im Status `ZUR_PRUEFUNG` angelegt, nie sofort freigegeben (4.6). Ungültige Items werden nicht gespeichert, gültige Items derselben Datei werden trotzdem importiert (4.7).
+  6. **Importbericht**: `{ createdCount, rejectedCount, rejections: [{ position, reason }] }` mit 1-basierter Position im `items`-Array (4.7, 4.9). Der Bericht wird nur in der Antwort geliefert und **nicht persistiert**; er enthält keine personenbezogenen Daten und wird bei Bedarf durch erneutes Hochladen reproduziert. Das Anlegen aller gültigen Items erfolgt in einer Transaktion.
+
+### ItemsModule – Items verwalten (Anforderung 5)
+
+- `createItem`, `updateItem`, `deleteItem`, `listItemsByValue`, `approveItem`, `deactivateItem` (außerhalb laufender Kampagne).
+- Regeln: Text 1–500 Zeichen (5.1, 5.2); genau eine Perspektive als Pflicht (5.3, 5.4); Perspektivwechsel mit Textanpassung (5.5); Gewichtung je Zuordnung 0–100 % (5.6, 5.7); mindestens eine Zuordnung > 0 % (5.8); Mehrfachzuordnung mit je eigener Gewichtung, mehrere dürfen 100 % tragen (5.9); Verwaltung der vorgeschlagenen Zuordnungen (5.10); Bearbeiten mit denselben Regeln (5.11).
+- Statuslogik: neu angelegte Items → `ZUR_PRUEFUNG` (5.1); `approveItem` nur bei erfüllten Regeln (5.13, 5.14); `updateItem` auf `FREIGEGEBEN` → `ZUR_PRUEFUNG` (5.15); `deactivateItem` außerhalb einer laufenden Kampagne: `FREIGEGEBEN` → `DEAKTIVIERT` (5.16); bearbeitete/verfeinerte Items werden bis zur erneuten Freigabe nicht in Umfragen verwendet (5.18). Ausschließlich `FREIGEGEBEN` ist poolfähig (5.17).
+- Löschschutz bei aktiver Kampagne (5.19, 5.20); Anzeige aller Items eines Werts mit Gewichtung > 0 % (5.21); Items unabhängig von Kampagnen verwaltbar, ohne bestehende Snapshots zu verändern (5.22–5.24).
+
+### CampaignModule – Kampagnen (Anforderung 6)
+
+- `createCampaign`, `assignPool`, `setItemsPerParticipant`, `activateCampaign`, `closeCampaign`, `deactivateSnapshotItem`.
+- Status-Maschine `Entwurf → Aktiv → Abgeschlossen` (6.1, 6.10, 6.22, 6.23).
+- `assignPool` akzeptiert nur Items mit Status `FREIGEGEBEN`; sonst wird die Zuordnung abgelehnt, der Pool bleibt unverändert, Fehler „nur freigegebene Items" (6.4, 6.5).
+- `activateCampaign` prüft in einer Transaktion (mit Zeilen-Lock auf den Pool-Items, damit keine Race mit `updateItem`/Deaktivierung entsteht): Item-Anzahl je Teilnehmer 1..Poolgröße (6.6–6.8), mindestens ein Wert und Item (6.8) und **alle Pool-Items weiterhin `FREIGEGEBEN`**; andernfalls Ablehnung unter Nennung der betroffenen Items (6.9). Danach Erzeugung des **Kampagnen-Snapshots** (eingefrorene Items einschließlich Item-Text, Item-Typ und Perspektive sowie Werte-Zuordnungen und Gewichtungen, jedes SnapshotItem mit `deactivatedAt = NULL`) (6.10, 6.11). Teilnehmer einer aktiven Kampagne sehen ausschließlich diese Snapshot-Version ohne deaktivierte Items (5.23); spätere Item-Änderungen lassen den Snapshot unberührt (5.24).
+- Unveränderlichkeit des Snapshots nach Aktivierung: Änderungen an Pool, Zuordnungen oder Gewichtungen werden abgelehnt (6.12); Änderungen werden nur durch eine neue Kampagne wirksam (6.21). Abgeschlossene Kampagnen lehnen weitere Antworten ab (6.24).
+- **`deactivateSnapshotItem(campaignId, snapshotItemId, confirmLastActive?: boolean)`** (6.13–6.19):
+  - Nur bei Kampagnenstatus `AKTIV`; sonst Ablehnung mit Hinweis (6.14).
+  - Setzt in **einer Transaktion** `SnapshotItem.deactivatedAt = now()` und den Status des Quell-`Item` auf `DEAKTIVIERT`; Snapshots anderer Kampagnen bleiben unverändert (6.13). Nichts anderes am Snapshot wird verändert (6.12).
+  - Bereits deaktivierte SnapshotItems können nicht reaktiviert werden; es gibt keine Reaktivierungs-Operation, ein entsprechender Versuch wird mit Hinweis „nur in später erstellten Kampagnen wieder verwendbar" abgelehnt (6.19). Ein überarbeitetes und erneut freigegebenes Item wird nur in später aktivierten Kampagnen verwendet (6.20).
+  - Ist das Item das **letzte aktive** SnapshotItem, liefert die Operation zunächst eine Warnung („neue Teilnehmer können die Umfrage danach nicht mehr öffnen") und führt die Deaktivierung nur mit `confirmLastActive = true` aus (6.18).
+  - Sinkt dadurch `activeCount < itemsPerParticipant`, enthält die Antwort bzw. die Kampagnenübersicht den Admin-Hinweis auf die verringerte Teilmengengröße (6.17); der Hinweis wird aus dem aktuellen Zustand abgeleitet und nicht gespeichert.
+
+### DistributionModule – Verteilung & Mehrfachteilnahme (Anforderung 7)
+
+- `chooseMode(campaignId, mode)` – genau ein Verteilmodus je Kampagne (7.1).
+- Modus A „öffentlicher Kampagnen-Link":
+  - `createCampaignLink` – eindeutiger, von früheren Links verschiedener Link (7.2).
+  - `TeilnahmekennungService` – wertet Cookie + lokal erzeugten Code aus; erkennt Wiederteilnahme je Kampagne (7.3, 7.4) als Best-Effort (7.14).
+  - `RateLimitHeuristic` – serverseitige, anonyme Begrenzung ungewöhnlich häufiger Übermittlungen je Sitzung/Zeitfenster (7.5, 7.6).
+- Modus B „individuelle Einmal-Links per E-Mail":
+  - `issueOneTimeLinks(campaignId, emails[])` – 1 bis 10.000 Adressen, je Adresse ein eindeutiger Einmal-Link; Versand über `MailPort`; **ausschließlich** ein anonymer Einmal-Token wird persistiert, **keine** E-Mail-Adresse (7.7, 7.8).
+  - `validateOneTimeToken` – offen/verbraucht; verbrauchte Links lehnen Zugang ab (7.9, 7.10).
+- Gemeinsame Regeln: Zugang nur bei Status „Aktiv"; bei „Entwurf" und „Abgeschlossen" zeigt das System einen einzigen, identischen Hinweis „Umfrage derzeit nicht verfügbar", ohne zwischen den beiden Status zu unterscheiden (7.11); ungültiger Link → Fehlermeldung (7.13).
+- **Kein aktives Item**: Ist die Kampagne `AKTIV`, aber `activeCount = 0`, wird der Zugang mit demselben Hinweis „Umfrage derzeit nicht verfügbar" abgelehnt. Es wird weder ein Einmal-Token verbraucht noch eine Teilnahmekennung als „teilgenommen" gespeichert noch eine Teilmenge gezogen; Einmal-Links bleiben unverbraucht (7.12).
+
+### SurveyModule – Umfrage beantworten (Anforderung 8)
+
+- `openSurvey(accessContext) -> TeilnehmerTeilmenge` – zieht je Teilnehmer eine zufällige Teilmenge aus den **zum Zeitpunkt des Öffnens aktiven** SnapshotItems (`deactivatedAt IS NULL`) im Umfang `k = min(itemsPerParticipant, activeCount)` (8.1, 6.17). Ist `activeCount < itemsPerParticipant`, werden alle aktiven Items gezogen. Die Umfrage rendert ausschließlich `SnapshotItem`-Inhalte (Item-Text, Item-Typ, Perspektive) der Kampagne, nie die aktuellen Quell-Items (5.23, 6.11).
+- `submitAnswer(accessContext, ratings[], comments[])` – läuft in einer Transaktion, die `deactivatedAt` der Teilmengen-Items zum Zeitpunkt der Übermittlung liest:
+  - Ratings dürfen nur Items der gezogenen Teilmenge referenzieren; Wertebereich 1,00–5,00 (8.2, 8.4).
+  - **Erforderlich** ist eine Bewertung für jedes zum Übermittlungszeitpunkt noch aktive Item der Teilmenge; fehlen welche, wird abgelehnt, bisherige Eingaben bleiben erhalten und die Liste der fehlenden aktiven Items wird angezeigt (8.5).
+  - Bewertungen (und Kommentare) zu inzwischen deaktivierten Items werden **angenommen und gespeichert**, aber nicht als erforderlich behandelt und später von Score, Auswertung und Export ausgeschlossen (8.7).
+  - Sind **alle** Items der Teilmenge inzwischen deaktiviert, wird die Übermittlung abgelehnt, keine Antwort gespeichert und der einheitliche Hinweis „Umfrage derzeit nicht verfügbar" angezeigt (8.8). Der Einmal-Token bleibt dabei unverbraucht.
+  - Speichert Antwort + optionale Kommentare 0–1.000 Zeichen anonym (8.3, 8.6, 8.9); verhindert Mehrfachabgabe (8.10): Sobald eine zweite Übermittlung über denselben Link bzw. dieselbe Teilnahme erkannt wird, wird keine weitere Antwort gespeichert, unabhängig davon, ob die Link-Kennung (Kampagnen-Link bzw. Teilnahmekennung oder Einmal-Link) bei der zweiten Übermittlung gültig oder vorhanden ist.
+- Die gezogene Teilmenge wird an die anonyme Teilnahme (Teilnahmekennung bzw. Einmal-Token) gebunden, damit dieselben Items innerhalb einer Teilnahme stabil bleiben, ohne Personenbezug herzustellen.
+
+### ScoringModule – Ist-Score (Anforderung 9)
+
+- **Vorfilter** `selectScorableRatings(snapshotItems, answerItems)` (Application-Schicht): behält nur AnswerItems, deren SnapshotItem `deactivatedAt IS NULL` hat – **unabhängig vom Abgabezeitpunkt** der Bewertung (9.1, 9.5). Der Filter ist von der Berechnung getrennt, damit `computeIstScore` eine reine Funktion bleibt.
+- `computeContribution(weight, rating) = weight × rating` je bewerteter Item-Zuordnung, nur für tatsächlich gesehene, bewertete und nicht deaktivierte Items (9.1).
+- `computeIstScore(value, perspective) = Σ(weight × rating) / Σ(weight)` je Unternehmenswert **und** je Perspektive über die vorgefilterten Eingaben, gerundet auf zwei Nachkommastellen (9.2).
+- „keine Daten" je Wert/Perspektive, wenn keine beitragende Zuordnung > 0 % existiert; Bewertungen deaktivierter Items zählen nicht als bewertete Zuordnung (9.3). Kampagnenweites „keine Daten", wenn keine Perspektive irgendeines Werts eine beitragende Bewertung hat (9.4).
+- `countExcludedRatings(snapshotItem) -> int` – Anzahl der aufgrund der Deaktivierung ausgeschlossenen Bewertungen je deaktiviertem Item (9.6), unabhängig vom Abgabezeitpunkt.
+
+### EvaluationModule – Auswertung & Verlauf (Anforderung 10)
+
+- `getCampaignEvaluation(campaignId)` – drei Perspektiv-Ist-Scores je Wert nebeneinander, Anzahl beitragender Bewertungen je Perspektive ohne Bewertungen deaktivierter Items (10.1); Sortierung aufsteigend nach Ist-Score „Selbst", bei Gleichstand alphabetisch (10.2); anonyme Freitextkommentare je Wert ohne Kommentare zu deaktivierten Items (10.3).
+- **Deaktivierte Items**: Je deaktiviertem SnapshotItem werden Item-Text, Deaktivierungszeitpunkt und Anzahl der ausgeschlossenen Bewertungen angezeigt (10.10); wurde kein Item deaktiviert, erscheint der Hinweis „keine Items deaktiviert" (10.11).
+- `getValueTrend(valueId)` – Verlauf je Perspektive über abgeschlossene Kampagnen chronologisch (10.4) mit Richtungskennzeichnung der Veränderung (10.5); die Verlaufswerte basieren auf den um deaktivierte Items bereinigten Scores.
+- Hinweise: <3 Antworten (10.6), Status „Entwurf" ohne Scores (10.7), null Antworten: Hinweis „keine Antworten" ohne Zahlenwerte (10.8); der Abschnitt der Freitextkommentare wird dabei ebenso wie die Ist-Scores vollständig durch denselben Hinweis ersetzt und nicht angezeigt (10.9).
+
+### ExportModule – CSV-Export (Anforderung 11)
+
+- `exportCsv(campaignId, includeComments)` – CSV mit Kopfzeile und je Wert einer Zeile: drei Ist-Scores + Anzahl Bewertungen je Perspektive (11.1, 11.2); optional anonyme Kommentare (11.3); nur für abgeschlossene Kampagnen (11.4); leeres Feld bei fehlender Perspektivdatenlage (11.5).
+- Bewertungen **und Kommentare** deaktivierter Items fließen weder in Scores noch in Bewertungsanzahlen noch in exportierte Kommentare ein (11.6); dieselbe Vorfilter-Funktion wie im ScoringModule wird verwendet.
+
+## Data Models
+
+### Entity-Relationship-Diagramm
+
+```mermaid
+erDiagram
+    ADMIN_USER ||--o{ SESSION : hat
+    VALUE ||--o{ FOCUS_SENTENCE : besitzt
+    VALUE ||--o{ VALUE_ASSIGNMENT : "wird zugeordnet durch"
+    ITEM ||--o{ VALUE_ASSIGNMENT : hat
+
+    CAMPAIGN ||--o{ CAMPAIGN_POOL_ITEM : "Entwurf-Pool"
+    CAMPAIGN_POOL_ITEM }o--|| ITEM : "nur FREIGEGEBEN"
+
+    CAMPAIGN ||--o{ SNAPSHOT_ITEM : friert_ein
+    SNAPSHOT_ITEM }o--|| ITEM : "sourceItemId"
+    SNAPSHOT_ITEM ||--o{ SNAPSHOT_ASSIGNMENT : hat
+    SNAPSHOT_ASSIGNMENT }o--|| VALUE : referenziert
+
+    CAMPAIGN ||--o{ PARTICIPATION : zaehlt
+    PARTICIPATION ||--o{ ANSWER_ITEM : enthaelt
+    ANSWER_ITEM }o--|| SNAPSHOT_ITEM : bewertet
+
+    CAMPAIGN ||--o| CAMPAIGN_LINK : "Modus A"
+    CAMPAIGN ||--o{ ONE_TIME_TOKEN : "Modus B"
+```
+
+Der frühere Entwurfs-Typ `GeneratedItemDraft` entfällt: Ein Vorschlag ist ein `Item` mit `status = ZUR_PRUEFUNG` (siehe Item-Statusmodell). Der Importbericht ist **keine** persistierte Entität (siehe ItemExchangeModule).
+
+### Entitäten
+
+**AdminUser**
+- `id`, `username`, `passwordHash` (Argon2id), `failedAttempts`, `lockoutUntil`.
+
+**Session**
+- `id`, `adminUserId`, `createdAt`, `lastActivityAt`, `expiresAt`. Inaktivitäts-Timeout wird über `lastActivityAt` erzwungen (1.6); Logout löscht die Session (1.5).
+
+**Value (Unternehmenswert)**
+- `id`, `name` (1–100, eindeutig), `description` (0–1.000), `createdAt`, `updatedAt`.
+
+**FocusSentence (Fokussatz)**
+- `id`, `valueId`, `text` (1–500).
+
+**Item**
+- `id`, `text` (1–500), `itemType` ∈ {`FRAGE`, `SITUATION`}, `perspective` ∈ {`SELBST`, `TEAM`, `FUEHRUNG`} (genau eine), `status` ∈ {`ZUR_PRUEFUNG`, `FREIGEGEBEN`, `DEAKTIVIERT`} (5.12), `origin` ∈ {`MANUELL`, `KI`, `IMPORT`} (informativ), `createdAt`, `updatedAt`. Vorschläge aus KI und Import sind Items im Status `ZUR_PRUEFUNG` (3.8, 4.6).
+
+**ValueAssignment (Werte-Zuordnung)**
+- `id`, `itemId`, `valueId`, `weight` (NUMERIC, 0–100); eindeutig je `(itemId, valueId)`. Mehrere Zuordnungen je Item erlaubt, je mit eigener Gewichtung; mehrere dürfen 100 % tragen (5.9). Vorgeschlagene Zuordnungen sind direkt änderbare `ValueAssignment`s des Items (3.5, 5.10).
+
+**Campaign (Kampagne)**
+- `id`, `title` (1–200), `startDate`, `endDate` (> startDate), `status` ∈ {`ENTWURF`, `AKTIV`, `ABGESCHLOSSEN`}, `itemsPerParticipant`, `distributionMode` ∈ {`PUBLIC_LINK`, `EMAIL_ONE_TIME`}, `activatedAt`, `closedAt`.
+
+**CampaignPoolItem (Pool im Status Entwurf)**
+- `campaignId`, `itemId`. Nur Items mit Status `FREIGEGEBEN` dürfen eingetragen werden (6.4, 6.5); bei Aktivierung erneut geprüft (6.9) und in den Snapshot überführt.
+
+**SnapshotItem / SnapshotAssignment (Kampagnen-Snapshot)**
+- Bei Aktivierung eingefrorene Kopien der Pool-Items und ihrer Werte-Zuordnungen + Gewichtungen. `SnapshotItem`: `id`, `campaignId`, `sourceItemId`, `text`, `itemType`, `perspective`, **`deactivatedAt` (nullable Timestamp; `NULL` = aktiv)**. `SnapshotAssignment`: `id`, `snapshotItemId`, `valueId`, `valueNameAtSnapshot`, `weight`.
+- Nach Aktivierung sind alle Felder unveränderlich (5.24, 6.11, 6.12, 6.21); **einzige zulässige Änderung** ist das einmalige Setzen von `deactivatedAt` von `NULL` auf einen Zeitpunkt (6.13). Ein Zurücksetzen auf `NULL` ist nicht vorgesehen (6.19); dies wird zusätzlich per Datenbank-Trigger/Constraint abgesichert.
+- „Aktiv" ≙ `deactivatedAt IS NULL`. Snapshot und Antworten bleiben die alleinige Grundlage für Anzeige und Berechnung der Kampagne.
+
+**CampaignLink (Modus A)**
+- `id`, `campaignId`, `linkToken` (eindeutig, zufällig). Öffentlich teilbar (7.2).
+
+**Teilnahmekennung / RateLimit (Modus A)**
+- Serverseitiger, anonymer Datensatz je Kampagne zur Wiederteilnahme-Erkennung und Rate-Limit-Heuristik. Enthält **keine** personenbezogenen Daten (7.6). Der browserseitige Teil (Cookie + Local-Storage-Code) liegt im Client.
+
+**OneTimeToken (Modus B)**
+- `id`, `campaignId`, `token` (eindeutig, zufällig), `status` ∈ {`OFFEN`, `VERBRAUCHT`}, `consumedAt`. **Keine** Zuordnung zu einer E-Mail-Adresse; Adresse wird nie gespeichert (7.7, 7.8).
+
+**Participation (Antwort-Hülle)**
+- `id`, `campaignId`, `submittedAt`, `drawnSnapshotItemIds[]` (die gezogene Teilnehmer-Teilmenge). Enthält **keine** personenbezogenen Identifikationsdaten (8.9). Die Bindung an Teilnahmekennung/Einmal-Token dient nur der Dedup, nicht der Identifikation.
+
+**AnswerItem (Ist-Bewertung + Kommentar)**
+- `id`, `participationId`, `snapshotItemId`, `rating` (NUMERIC(3,2), 1.00–5.00), `comment` (0–1.000, optional). Anonym (8.9). Bewertungen und Kommentare deaktivierter SnapshotItems bleiben gespeichert (6.16, 8.7), werden aber über den Vorfilter von Score, Auswertung und Export ausgeschlossen.
+
+### Datentypen und Genauigkeit
+
+- `rating` und `weight` werden als exakte Dezimalwerte (`NUMERIC`) gespeichert, um Rundungsfehler in der Ist-Score-Berechnung zu vermeiden. Die Rundung auf zwei Nachkommastellen erfolgt ausschließlich bei der Ausgabe des Ist-Scores (9.2).
+- Gewichtungen werden intern als Prozentwerte geführt; da sie als gemeinsamer Faktor in Zähler und Nenner stehen, ist die Score-Berechnung unabhängig davon, ob Gewichtungen als 0–100 oder 0–1 interpretiert werden.
+
+## Correctness Properties
+
+Eine Eigenschaft (Property) ist ein Merkmal oder Verhalten, das über alle gültigen Ausführungen des Systems hinweg wahr sein soll – im Kern eine formale Aussage darüber, was das System tun soll. Eigenschaften bilden die Brücke zwischen der menschenlesbaren Spezifikation und maschinell verifizierbaren Korrektheitsgarantien. Die folgenden Eigenschaften sind universell quantifiziert formuliert und für Property-Based Testing mit **fast-check** gedacht. Jede Eigenschaft nennt ihre quantifizierten Eingaben, sodass sie direkt als Generator-/Assertion-Paar kodiert werden kann. Properties 1–8 betreffen reine Score-Funktionen auf bereits vorgefilterten (nicht deaktivierten) Eingaben; der Ausschluss deaktivierter Items wird in Property 21 und 26 geprüft.
+
+### Property 1: Ist-Score liegt im gültigen Wertebereich
+
+*Für alle* Mengen beitragender Zuordnungen `(weight, rating)` eines Unternehmenswerts je Perspektive, bei denen alle `rating`-Werte im Bereich [1,00; 5,00] liegen und mindestens ein `weight > 0` ist, SOLL das Ergebnis von `computeIstScore` im Bereich [1,00; 5,00] liegen.
+
+**Validates: Requirements 9.1, 9.2**
+
+### Property 2: Konstante Bewertungen ergeben genau diese Bewertung
+
+*Für alle* Mengen beitragender Zuordnungen mit beliebigen Gewichtungen (mindestens eine `weight > 0`), bei denen alle `rating`-Werte gleich einem Wert `r` sind, SOLL `computeIstScore` exakt `r` ergeben, unabhängig von den Gewichtungen.
+
+**Validates: Requirements 9.2**
+
+### Property 3: Homogenität der Gewichtungen (Skalierungsinvarianz)
+
+*Für alle* Mengen beitragender Zuordnungen und *für alle* positiven Konstanten `k > 0` SOLL das Skalieren jeder Gewichtung mit `k` denselben Ist-Score ergeben wie ohne Skalierung (vor Rundung identisch, nach Rundung gleich).
+
+**Validates: Requirements 9.2**
+
+### Property 4: Zuordnungen mit Gewichtung 0 sind neutral
+
+*Für alle* Mengen beitragender Zuordnungen SOLL das Hinzufügen einer beliebigen Zuordnung mit `weight = 0` den Ist-Score nicht verändern.
+
+**Validates: Requirements 9.1, 9.2, 9.3**
+
+### Property 5: Rundung auf zwei Nachkommastellen ist idempotent
+
+*Für alle* berechneten Ist-Scores SOLL das erneute Anwenden der Rundung auf zwei Nachkommastellen denselben Wert ergeben (`round2(round2(x)) = round2(x)`).
+
+**Validates: Requirements 9.2**
+
+### Property 6: "keine Daten" genau bei fehlender beitragender Zuordnung
+
+*Für alle* Kombinationen aus Unternehmenswert und Perspektive SOLL `computeIstScore` genau dann "keine Daten" liefern, wenn es für diesen Wert und diese Perspektive keine beitragende, bewertete Zuordnung eines nicht deaktivierten Items mit `weight > 0` gibt; andernfalls SOLL ein numerischer Ist-Score geliefert werden.
+
+**Validates: Requirements 9.3, 9.4**
+
+### Property 7: Perspektiven sind unabhängig
+
+*Für alle* Antwortmengen SOLL der Ist-Score eines Unternehmenswerts in einer Perspektive ausschließlich aus Items dieser Perspektive berechnet werden; das Ändern, Hinzufügen oder Entfernen von Bewertungen in einer anderen Perspektive SOLL den Ist-Score der betrachteten Perspektive nicht verändern.
+
+**Validates: Requirements 9.2**
+
+### Property 8: Monotone Schranken beim Hinzufügen einer Bewertung
+
+*Für alle* Mengen beitragender Zuordnungen und *für jede* zusätzliche beitragende Bewertung `r` mit `weight > 0` SOLL der neue gewichtete Mittelwert zwischen dem bisherigen Mittelwert und `r` liegen und innerhalb des Intervalls [min(ratings), max(ratings)] der beitragenden Bewertungen bleiben.
+
+**Validates: Requirements 9.1, 9.2**
+
+### Property 9: Teilmengengröße ist das Minimum aus Item-Anzahl je Teilnehmer und Anzahl aktiver Items
+
+*Für alle* Kampagnen im Status "Aktiv" mit Snapshot-Pool `P`, Menge aktiver Items `A ⊆ P` mit `|A| ≥ 1` und Item-Anzahl je Teilnehmer `n` (mit `1 ≤ n ≤ |P|`) SOLL jede für einen neuen Teilnehmer gezogene Teilmenge genau `min(n, |A|)` Items enthalten; gilt `|A| < n`, SOLL die Teilmenge genau alle aktiven Items enthalten.
+
+**Validates: Requirements 6.6, 6.17, 8.1**
+
+### Property 10: Teilnehmer-Teilmenge stammt ausschließlich aus aktiven Pool-Items und ist duplikatfrei
+
+*Für alle* gezogenen Teilnehmer-Teilmengen SOLL jedes enthaltene Item ein zum Ziehungszeitpunkt aktives Element des Kampagnen-Pools (Snapshot) sein und kein Item mehrfach vorkommen.
+
+**Validates: Requirements 8.1**
+
+### Property 11: Pflichtbewertung referenziert genau die noch aktiven Items der gezogenen Teilmenge
+
+*Für alle* gezogenen Teilnehmer-Teilmengen `S` und *für alle* Mengen `D ⊆ S` zwischenzeitlich deaktivierter Items SOLL eine Übermittlung genau dann als vollständig akzeptiert werden, wenn für jedes Item aus `S \ D` eine gültige Bewertung vorliegt und `S \ D` nicht leer ist; Bewertungen für Items aus `D` SOLL das System speichern, aber nicht verlangen; ein Item außerhalb von `S` SOLL abgelehnt werden. Ist `S \ D` leer, SOLL die Übermittlung abgelehnt und keine Antwort gespeichert werden.
+
+**Validates: Requirements 8.1, 8.2, 8.4, 8.5, 8.7, 8.8**
+
+### Property 12: Quell-Änderungen verändern den Kampagnen-Snapshot nicht
+
+*Für alle* Kampagnen im Status "Aktiv" oder "Abgeschlossen" SOLL der zur Berechnung verwendete Snapshot (Texte, Typen, Perspektiven, Zuordnungen, Gewichtungen) invariant gegenüber späteren Änderungen, Neugenerierungen, Verfeinerungen oder Freigabe-/Statuswechseln der Quell-Items und Werte-Zuordnungen sein; eine Berechnung über denselben Antwortbestand SOLL unabhängig vom Zeitpunkt dasselbe Ergebnis liefern, solange keine Deaktivierung im Snapshot stattgefunden hat.
+
+**Validates: Requirements 5.22, 5.23, 5.24, 6.11, 6.12, 6.21**
+
+### Property 13: Einmal-Token kann höchstens eine Teilnahme erzeugen
+
+*Für alle* Einmal-Token und *für jede* Folge von Zugriffs- und Übermittlungsversuchen SOLL ein bereits verbrauchter Einmal-Token keine zweite gespeicherte Participation erzeugen, unabhängig davon, ob die Link-Kennung bei der zweiten Übermittlung gültig oder vorhanden ist, sofern die zweite Übermittlung über denselben Link bzw. dieselbe Teilnahme erkannt wird; höchstens eine Participation je Token existiert.
+
+**Validates: Requirements 7.9, 7.10, 8.10**
+
+### Property 14: Keine E-Mail-Adresse wird persistiert (Modus B)
+
+*Für alle* Eingabemengen von E-Mail-Adressen im Verteilmodus "individuelle Einmal-Links per E-Mail" SOLL nach dem Versand kein persistenter Datensatz die übergebene E-Mail-Adresse oder eine daraus ableitbare Zuordnung enthalten; gespeichert wird ausschließlich ein anonymer Einmal-Token.
+
+**Validates: Requirements 7.7, 7.8**
+
+### Property 15: Teilnahmekennung und Heuristik ohne personenbezogene Identifikatoren
+
+*Für alle* erzeugten Teilnahmekennungen und Datensätze der serverseitigen Heuristik SOLL der gespeicherte Inhalt keine personenbezogenen Identifikationsdaten enthalten und nicht aus solchen abgeleitet sein.
+
+**Validates: Requirements 7.6**
+
+### Property 16: Anonymität gespeicherter Antworten
+
+*Für alle* gespeicherten Participation- und AnswerItem-Datensätze SOLL der Inhalt keine personenbezogenen Identifikationsdaten (Name, E-Mail, IP, Benutzerkennung) enthalten.
+
+**Validates: Requirements 8.9**
+
+### Property 17: Zulässige Statusübergänge der Kampagne
+
+*Für alle* Kampagnen und *für jeden* ausgelösten Statuswechsel SOLL ausschließlich die Sequenz Entwurf → Aktiv → Abgeschlossen erfolgreich sein; jeder andere Übergang SOLL abgelehnt werden und den bestehenden Status unverändert lassen.
+
+**Validates: Requirements 6.1, 6.10, 6.22, 6.23**
+
+### Property 18: Antworten nur bei aktiver Kampagne
+
+*Für alle* Antwortübermittlungen SOLL die Speicherung genau dann zugelassen werden, wenn die zugehörige Kampagne den Status "Aktiv" hat; bei Status "Entwurf" oder "Abgeschlossen" SOLL die Übermittlung abgelehnt werden.
+
+**Validates: Requirements 6.24, 7.11**
+
+### Property 19: Nur freigegebene Items gelangen in Pool und Snapshot
+
+*Für alle* Mengen von Items mit beliebigen Status aus {`ZUR_PRUEFUNG`, `FREIGEGEBEN`, `DEAKTIVIERT`} SOLL `assignPool` genau dann erfolgreich sein, wenn alle Items `FREIGEGEBEN` sind (andernfalls bleibt der Pool unverändert), und `activateCampaign` SOLL scheitern, wenn der Pool mindestens ein nicht freigegebenes Item enthält; jedes SnapshotItem einer aktivierten Kampagne SOLL aus einem zum Aktivierungszeitpunkt freigegebenen Item stammen.
+
+**Validates: Requirements 5.17, 6.4, 6.5, 6.9, 6.11**
+
+### Property 20: Deaktivierte Items werden nicht mehr gezogen
+
+*Für alle* aktiven Kampagnen, *für alle* Mengen deaktivierter SnapshotItems `D` und *für alle* nach der Deaktivierung gezogenen Teilnehmer-Teilmengen SOLL die Teilmenge keine Items aus `D` enthalten; bereits vor der Deaktivierung gezogene Teilmengen SOLL die Deaktivierung nicht verändern. Ist `|P \ D| = 0`, SOLL kein Ziehungsergebnis und keine Verbrauchung eines Einmal-Tokens entstehen.
+
+**Validates: Requirements 6.15, 7.12, 8.1**
+
+### Property 21: Score schließt alle Bewertungen deaktivierter Items aus
+
+*Für alle* Snapshots, *für alle* Antwortmengen und *für alle* Mengen deaktivierter SnapshotItems `D` (mit beliebigem Abgabezeitpunkt der Bewertungen relativ zur Deaktivierung) SOLL der Ist-Score je Wert und Perspektive gleich dem Ist-Score sein, der auf dem Datensatz berechnet wird, aus dem alle Bewertungen zu Items in `D` entfernt wurden; ebenso SOLL die Anzahl beitragender Bewertungen je Perspektive diese Bewertungen nicht enthalten, und die je Item ermittelte Anzahl ausgeschlossener Bewertungen SOLL der Anzahl der gespeicherten Bewertungen dieses Items entsprechen.
+
+**Validates: Requirements 6.16, 9.1, 9.3, 9.5, 9.6**
+
+### Property 22: Deaktivierung ist die einzige Mutation eines aktiven Snapshots
+
+*Für alle* aktiven Snapshots und *für jede* Folge von Mutationsversuchen (Pool ändern, Zuordnung/Gewichtung ändern, Text ändern, Reaktivieren, Deaktivieren) SOLL ausschließlich `deactivatedAt` bislang aktiver SnapshotItems von `NULL` auf einen Zeitpunkt gesetzt werden können; alle Texte, Typen, Perspektiven, Zuordnungen und Gewichtungen SOLLEN nach der Folge unverändert sein, bereits gesetzte `deactivatedAt` SOLLEN unverändert bleiben, die Snapshots anderer Kampagnen SOLLEN unverändert bleiben, und das Quell-Item eines deaktivierten SnapshotItems SOLL den Status `DEAKTIVIERT` haben.
+
+**Validates: Requirements 6.12, 6.13, 6.14, 6.19**
+
+### Property 23: Export/Import-Round-Trip erzeugt genau die Items in "zur Prüfung"
+
+*Für alle* Mengen von Unternehmenswerten und *für alle* Mengen gültiger Items, die aus dem Export dieser Werte aufgebaut sind (Zuordnungen referenzieren Wertnamen des Exports), SOLL das Importieren der Datei genau diese Items (Text, Typ, Perspektive, Zuordnungen mit Gewichtungen) im Status `ZUR_PRUEFUNG` anlegen, keine weiteren Items erzeugen und einen Importbericht mit `createdCount` = Anzahl der Items und `rejectedCount` = 0 liefern.
+
+**Validates: Requirements 4.1, 4.2, 4.4, 4.6, 4.9**
+
+### Property 24: Ungültige importierte Items werden nie persistiert
+
+*Für alle* Dateien mit einer Mischung aus gültigen und ungültigen Items (Regelverletzung oder unbekannter Wertname) SOLL nach dem Import kein ungültiges Item im Bestand vorhanden sein, SOLLEN alle gültigen Items im Status `ZUR_PRUEFUNG` angelegt sein, SOLL der Bericht je ungültigem Item dessen Position und einen Grund enthalten, und `createdCount + rejectedCount` SOLL der Anzahl der Items der Datei entsprechen; *für alle* Dateien, die kein gültiges JSON sind oder dem Top-Level-Schema nicht entsprechen, SOLL kein Item gespeichert werden.
+
+**Validates: Requirements 4.4, 4.5, 4.7, 4.8, 4.9**
+
+### Property 25: Freigabe-Workflow erhält Gültigkeit und Status-Regeln
+
+*Für alle* Items SOLL `approveItem` genau dann den Status auf `FREIGEGEBEN` setzen, wenn das Item die Gültigkeitsregeln erfüllt und im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT` ist (andernfalls bleibt der Status erhalten), und *für alle* gültigen Änderungen an einem `FREIGEGEBEN`en Item SOLL der Status danach `ZUR_PRUEFUNG` sein.
+
+**Validates: Requirements 3.9, 5.13, 5.14, 5.15, 5.18**
+
+### Property 26: Auswertung und CSV-Export schließen Bewertungen und Kommentare deaktivierter Items aus
+
+*Für alle* abgeschlossenen Kampagnen und *für alle* Mengen deaktivierter SnapshotItems `D` SOLLEN weder die Auswertungsanzeige noch die CSV-Datei Bewertungen, Bewertungsanzahlen oder Freitextkommentare von Items in `D` enthalten, unabhängig vom Abgabezeitpunkt; die Auswertung SOLL für jedes Item in `D` Text, Deaktivierungszeitpunkt und Anzahl ausgeschlossener Bewertungen anzeigen und bei `D = ∅` den Hinweis „keine Items deaktiviert" ausgeben.
+
+**Validates: Requirements 10.1, 10.3, 10.10, 10.11, 11.3, 11.6**
+
+## Error Handling
+
+Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein definiertes, für den Nutzer verständliches und datenschutzkonformes Verhalten.
+
+### Eingabevalidierung (Zod, Admin- und Teilnahme-API)
+
+- Alle Eingaben werden gegen Zod-Schemata validiert (Textlängen, Gewichtungsbereich 0–100 %, Bewertungsbereich 1,00–5,00, Titel-, Namens- und Fokussatzlängen, Enddatum > Startdatum).
+- Bei Validierungsfehlern werden die eingegebenen Daten unverändert beibehalten (Feldwerte bleiben erhalten) und eine **spezifische** Fehlermeldung je Feld gemäß Akzeptanzkriterien zurückgegeben (z. B. fehlender Name 2.2, Namensduplikat 2.3, ungültige Textlänge 2.5/5.2, ungültige Gewichtung 5.7, fehlende Zuordnung > 0 % 5.8, fehlende Perspektive 5.4, ungültiger Titel 6.2, ungültiger Zeitraum 6.3).
+- Validierung erfolgt sowohl im Frontend (sofortiges Feedback) als auch im Backend (verbindliche Durchsetzung).
+
+### Authentifizierungsfehler
+
+- **Ungültige Anmeldedaten**: generische Fehlermeldung ohne Angabe des fehlerhaften Feldes; keine Sitzung wird erstellt (1.2).
+- **Lockout**: nach 5 Fehlversuchen in 15 Minuten wird weiterer Versuch für mindestens 15 Minuten serverseitig abgelehnt, mit Hinweis auf die vorübergehende Sperrung (1.3).
+- **Inaktivitäts-Timeout**: nach 30 Minuten ohne Aktivität wird die Sitzung beendet, der nächste Zugriff leitet auf die Anmeldeseite (1.6).
+- **Unautorisierter Zugriff**: Aufruf einer Admin-Funktion ohne gültige Sitzung wird von der `AuthGuard` abgewiesen, liefert keine Funktionsdaten und leitet auf die Anmeldeseite (1.4).
+
+### LLM-Generierung, Verfeinerung und nicht vertrauenswürdige Ausgabe
+
+- Schlägt die Generierung technisch fehl, gelten **alle drei Bedingungen gemeinsam**: Es werden **keine** Items gespeichert, die Wert-Vorgaben bleiben unverändert, **und** es erscheint eine Fehlermeldung mit Hinweis auf den fehlgeschlagenen Vorgang und die Möglichkeit eines erneuten Versuchs (3.12).
+- **Verfeinerung (`refine`)**: Schlägt sie technisch fehl oder liefert eine nicht schemakonforme Ausgabe, wird **keine** Änderung am Item gespeichert, Item und Wert-Vorgaben bleiben unverändert, und die Fehlermeldung weist auf den fehlgeschlagenen Verfeinerungsvorgang und die Möglichkeit eines erneuten Versuchs hin (3.15). Verfeinerung eines Items im Status `FREIGEGEBEN` wird abgelehnt (nur `ZUR_PRUEFUNG`/`DEAKTIVIERT`, 3.13); ein Anweisungstext über 1.000 Zeichen wird als Validierungsfehler abgelehnt.
+- Fehlender Fokussatz blockiert die Generierung mit entsprechender Meldung (3.2).
+- LLM-Ausgaben werden als nicht vertrauenswürdig behandelt und strikt gegen das geteilte Zod-Item-Schema validiert (gültige Perspektive, gültiger Item-Typ, Gewichtungen 0–100 %, mindestens eine Zuordnung > 0 %). Ungültige Ausgaben werden verworfen und führen nicht zu gespeicherten oder geänderten Items (3.4, 3.5, 3.8).
+
+### Item-Export und -Import
+
+- **Export ohne Unternehmenswerte**: Ablehnung, keine Datei, Fehlermeldung mit Hinweis auf fehlende Werte (4.3).
+- **Ungültiges JSON, unzulässiger Dateiaufbau, Überschreitung von Größen-/Mengenlimits**: **gesamter Import abgelehnt**, kein Item gespeichert, Fehlermeldung „ungültiger Dateiaufbau" (4.8).
+- **Einzelne ungültige Items** (Regelverletzung, unbekannter Wertname, doppelte Werte-Zuordnung): nur dieses Item wird abgelehnt und mit Position (1-basiert) und Grund im Importbericht genannt; gültige Items derselben Datei werden angelegt (4.5, 4.7). Der Bericht nennt Anzahl angelegter und abgelehnter Items (4.9).
+- Fehlgeschlagene Persistenz beim Anlegen der gültigen Items rollt die Transaktion zurück; der Import gilt dann als fehlgeschlagen, es entstehen keine Teilbestände.
+
+### E-Mail-Versand (Modus B)
+
+- Schlägt der Versand einzelner oder aller Einmal-Links fehl, wird dies dem Administrator gemeldet. Die **Anonymitätsgarantie bleibt unberührt**: Es wird weiterhin keine E-Mail-Adresse persistiert; gespeichert ist ausschließlich der anonyme Einmal-Token (7.7, 7.8).
+- Bereits erzeugte, aber nicht zustellbare Token bleiben gültige, unbenutzte Token; ein erneuter Versandversuch erzeugt keine Dubletten im Antwortbestand.
+
+### Link-/Token-Behandlung
+
+- **Ungültiger Link/Token** (keiner gespeicherten Kampagne bzw. keinem Token zugeordnet): Fehlermeldung mit Hinweis auf den ungültigen Link (7.13).
+- **Gültiger Link zu nicht aktiver Kampagne** (Status "Entwurf" oder "Abgeschlossen"): Zugang wird abgelehnt; für beide Status wird derselbe Hinweis „Umfrage derzeit nicht verfügbar" angezeigt, ohne zwischen den Status zu unterscheiden (7.11).
+- **Aktive Kampagne ohne aktives Item**: gleicher Hinweis „Umfrage derzeit nicht verfügbar"; Einmal-Link bleibt unverbraucht, keine Teilnahmekennung wird als „teilgenommen" markiert (7.12).
+- **Verbrauchter Einmal-Link**: Zugang wird abgelehnt, die gespeicherte Antwort bleibt unverändert, Hinweis "bereits teilgenommen" (7.10).
+- **Erkannte Wiederteilnahme (Modus A)**: Zugang wird abgelehnt mit Hinweis "bereits teilgenommen" (7.4), Best-Effort gemäß 7.14.
+
+### Kampagnenstatus-Verletzungen
+
+- **Bearbeitung eines eingefrorenen Snapshots**: Änderung an Pool, Zuordnungen oder Gewichtungen einer Kampagne im Status "Aktiv"/"Abgeschlossen" wird abgelehnt, der Snapshot bleibt unverändert, Hinweis auf Unveränderlichkeit (6.12); ausgenommen ist ausschließlich die Deaktivierung.
+- **Abgabe an nicht aktive Kampagne**: Zugang bzw. Antwortübermittlung an eine Kampagne mit Status "Entwurf"/"Abgeschlossen" wird abgelehnt (6.24). Für beide Status zeigt das System denselben einheitlichen Hinweis „Umfrage derzeit nicht verfügbar", ohne den Status zu unterscheiden oder preiszugeben (7.11).
+- **Ungültiger Statuswechsel**: nicht der Sequenz entsprechende Übergänge werden abgelehnt, der bestehende Status bleibt erhalten (6.23).
+- **Nicht freigegebene Items im Pool**: Zuordnung eines Items im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT` zum Kampagnen-Pool wird abgelehnt, der Pool bleibt unverändert, Hinweis „nur freigegebene Items" (6.5). Enthält der Pool bei der Aktivierung (z. B. wegen zwischenzeitlicher Bearbeitung) nicht mehr freigegebene Items, wird die Aktivierung abgelehnt, der Status bleibt „Entwurf" und die betroffenen Items werden benannt (6.9). Die Prüfung erfolgt in derselben Transaktion wie die Snapshot-Erzeugung.
+- **Freigabe ungültiger Items**: `approveItem` lehnt ab, der Status bleibt erhalten, die verletzte Regel wird benannt (5.14).
+
+### Deaktivierung von Items (Randfälle)
+
+- **Kampagne nicht "Aktiv"**: Deaktivierung für "Entwurf"/"Abgeschlossen" wird abgelehnt, Snapshot unverändert, Hinweis „nur für Kampagnen im Status Aktiv" (6.14).
+- **Reaktivierung in derselben Kampagne**: wird abgelehnt (kein Endpunkt/Constraint-Verletzung), Hinweis, dass ein deaktiviertes Item nur in später erstellten Kampagnen erneut verwendet werden kann (6.19). Erneutes Deaktivieren eines bereits deaktivierten SnapshotItems ist idempotent abgewiesen und ändert `deactivatedAt` nicht.
+- **Letztes aktives Item**: Warnung und Ausführung erst nach expliziter Bestätigung (`confirmLastActive`); ohne Bestätigung bleibt der Snapshot unverändert (6.18). Danach gilt für neue Teilnehmer „Umfrage derzeit nicht verfügbar" (7.12).
+- **Verringerte Teilmenge**: `activeCount < itemsPerParticipant` erzeugt keinen Fehler; neue Teilnehmer erhalten alle aktiven Items, der Administrator erhält einen Hinweis auf die verringerte Teilmengengröße (6.17).
+- **Nebenläufigkeit**: Deaktivierung und Antwortübermittlung laufen transaktional; die Übermittlung wertet `deactivatedAt` zum Übermittlungszeitpunkt aus. Eine Antwort, die sich mit einer Deaktivierung überschneidet, wird entweder vollständig mit der Deaktivierung berücksichtigt (Bewertung gespeichert, aber ausgeschlossen, 8.7) oder – wenn alle Items der Teilmenge deaktiviert sind – abgelehnt (8.8). Ist das Quell-Item inzwischen erneut bearbeitet worden, bleibt die Deaktivierung des Snapshots dennoch wirksam (6.13).
+- **Antwort auf deaktiviertes Item nach Abgabe**: Bewertungen und Kommentare bleiben gespeichert (6.16), fließen aber nie in Score, Auswertung oder Export ein, unabhängig vom Abgabezeitpunkt (9.5).
+
+### Export und Teildatenlage
+
+- **Export einer nicht abgeschlossenen Kampagne**: wird abgelehnt; Export ist nur für Kampagnen im Status "Abgeschlossen" möglich (11.4).
+- **Teildaten/"keine Daten"**: fehlt für eine Perspektive eines Werts eine beitragende Bewertung (Bewertungen deaktivierter Items zählen nicht), wird diese aus der Berechnung ausgeschlossen und im Export als leeres Feld ausgegeben (9.3, 11.5); kampagnenweit "keine Daten" bei vollständig fehlenden Bewertungen (9.4).
+- **Null abgegebene Antworten**: Die Auswertung zeigt den Hinweis „keine Antworten" und keine berechneten Zahlenwerte (10.8). Der Abschnitt der Freitextkommentare wird ebenso wie die Ist-Scores vollständig durch diesen Hinweis ersetzt und nicht angezeigt (10.9).
+
+### Transaktionsgrenzen und Idempotenz
+
+- **Snapshot-Erzeugung** bei Aktivierung läuft in einer Transaktion (inkl. erneuter Prüfung des Item-Status): entweder vollständiger, konsistenter Snapshot oder keine Zustandsänderung (6.9, 6.11).
+- **Deaktivierung** läuft in einer Transaktion (`deactivatedAt` + Quell-Item-Status).
+- **Antwortübermittlung** läuft transaktional inklusive Dedup-Prüfung (Einmal-Token-Verbrauch bzw. Teilnahmekennung), sodass bei Nebenläufigkeit höchstens eine Participation je Teilnahme entsteht (7.10, 8.10). Die Verhinderung der Mehrfachabgabe greift unabhängig davon, ob die Link-Kennung (Kampagnen-Link bzw. Teilnahmekennung oder Einmal-Link) bei der zweiten Übermittlung gültig oder vorhanden ist, sofern die zweite Übermittlung über denselben Link bzw. dieselbe Teilnahme erkannt wird (8.10).
+- Wiederholtes Konsumieren eines bereits verbrauchten Tokens ist idempotent abgewiesen (keine zusätzliche Wirkung).
+
+## Testing Strategy
+
+Es wird ein mehrschichtiger, überwiegend automatisierter Testansatz verfolgt, der Beispiel- und Eigenschaftstests kombiniert.
+
+### Unit-Tests (Domänenlogik)
+
+- Reine Fachlogik (Validierungsregeln, Item-Statusübergänge, `computeContribution`, `computeIstScore`, `selectScorableRatings`, Teilmengen-Ziehung, Snapshot-Erzeugung, Status-Maschine, Import-Prüfung inkl. Wertnamen-Auflösung) wird isoliert mit konkreten Beispielen und Randfällen getestet.
+- Fokus auf spezifische Szenarien und Fehlerbedingungen (z. B. leere/zu lange Texte, Gewichtung außerhalb 0–100 %, Bewertung außerhalb 1,00–5,00, ungültige Statusübergänge, "keine Daten"-Fälle, Deaktivierung des letzten aktiven Items, `activeCount < itemsPerParticipant`, Reaktivierungsversuch).
+- **Import/Export**: Beispieltests für Export ohne Werte, ungültiges JSON, Datei über Größenlimit, Top-Level-Schemaverletzung, unbekannter Wertname, doppelte Zuordnung, gemischte Dateien mit Importbericht (Position/Grund/Anzahlen), Konsistenz des exportierten JSON Schemas mit dem Zod-Schema, Unschädlichkeit von Schlüsseln wie `__proto__`.
+- **Freigabe-Workflow**: Beispieltests für Freigabe gültiger/ungültiger Items, Bearbeiten freigegebener Items (→ `ZUR_PRUEFUNG`), Zuordnung nicht freigegebener Items zum Pool, Aktivierung mit nachträglich geändertem Pool-Item.
+- **Deaktivierungs-Flows**: Beispieltests für Deaktivierung in Status Aktiv/Entwurf/Abgeschlossen, Setzen von `deactivatedAt` und Quell-Item-Status, Isolation anderer Kampagnen, Warn-/Bestätigungsablauf beim letzten aktiven Item, Hinweis bei verringerter Teilmenge, Ablehnung von Reaktivierung, Wiederverwendung eines überarbeiteten Items nur in später aktivierten Kampagnen.
+
+### Property-Based Tests (fast-check)
+
+- Die unter "Correctness Properties" definierten Eigenschaften (Property 1–26) werden je als **ein** fast-check-Property-Test implementiert, mit mindestens **100 Iterationen** je Test.
+- Schwerpunkt auf der Ist-Score-Mathematik (Wertebereich, Homogenität, Neutralität von Gewicht 0, Idempotenz der Rundung, Perspektiven-Unabhängigkeit, monotone Schranken), der Teilmengen-Ziehung (Größe `min(n, aktive)`, Pool-/Aktivzugehörigkeit, Duplikatfreiheit), der Snapshot-Unveränderlichkeit samt Deaktivierung als einziger Mutation, dem Ausschluss deaktivierter Items in Score/Auswertung/CSV und dem Import-Round-Trip (Generatoren erzeugen Werte, gültige und ungültige Items sowie zufällig deaktivierte Item-Mengen und Abgabezeitpunkte).
+- Jeder Property-Test trägt einen Verweis auf die zugehörige Design-Eigenschaft im Format: **Feature: kulturbarometer, Property {Nummer}: {Property-Text}**.
+
+### Integrationstests (APIs)
+
+- Admin-API und Teilnahme-API werden inklusive **Auth-Guards** getestet (unautorisierter Zugriff wird abgewiesen und umgeleitet; Lockout und Inaktivitäts-Timeout greifen).
+- Beide **Verteilmodi** werden abgedeckt: Modus A (öffentlicher Kampagnen-Link, Wiederteilnahme-Erkennung, Rate-Limit-Heuristik) und Modus B (Einmal-Links, Token-Verbrauch, kein Persistieren der E-Mail-Adresse); zusätzlich der Fall „kein aktives Item" (Einmal-Link bleibt unverbraucht).
+- **Item-Export/-Import** Ende-zu-Ende über die Admin-API mit Datei-Upload (Größenlimit, Teilimport, Importbericht, Transaktionsrollback).
+- Transaktionales Verhalten bei Snapshot-Erzeugung, Deaktivierung und Antwortübermittlung wird mit nebenläufigen Zugriffen geprüft (u. a. Deaktivierung parallel zur Übermittlung, Aktivierung parallel zur Bearbeitung eines Pool-Items).
+
+### End-to-End-Tests (Schlüsselabläufe)
+
+- Item-Generierung und -Verfeinerung mit Prüf-Workflow (generieren, bearbeiten, verfeinern, freigeben, verwerfen).
+- Alternativer Weg: Export der Vorgaben, Import extern erstellter Items, Prüfung und Freigabe.
+- Teilnahme an der Umfrage mit gezogener Teilmenge und Dedup (Mehrfachabgabe wird verhindert).
+- Deaktivierung eines missverstandenen Items in laufender Kampagne: neue Teilnehmer sehen es nicht mehr, Auswertung zeigt es als deaktiviert samt ausgeschlossener Bewertungen, CSV enthält es nicht.
+- Schließen einer Kampagne und Berechnung der Ist-Scores je Wert und Perspektive.
+- CSV-Export einer abgeschlossenen Kampagne (inklusive optionaler anonymer Kommentare und leerer Felder bei fehlender Perspektivdatenlage).
+
+### Test-Doppel und Determinismus
+
+- Ein **Mock-`ItemGenerationPort`** liefert für `generate` und `refine` deterministische, schema-konforme bzw. bewusst ungültige Ausgaben und simulierte Fehler, um Erfolg, Ablehnung nicht vertrauenswürdiger LLM-Ausgaben und das „nichts gespeichert"-Verhalten bei Fehlern reproduzierbar zu testen.
+- Ein **Mock-`MailPort`** erfasst Versandaufrufe deterministisch, ohne real zu versenden, und erlaubt das Simulieren von Versandfehlern.
+- Für zufallsbasierte Logik (Teilmengen-Ziehung) wird ein injizierbarer Zufallsgenerator (Seed) verwendet, um Tests deterministisch zu halten; ebenso eine injizierbare Uhr für `deactivatedAt`.
+
+### Datenschutz-/Anonymitätsprüfungen
+
+- Dedizierte Assertions prüfen, dass gespeicherte Participation-, AnswerItem-, Teilnahmekennung- und Heuristik-Datensätze **keine** personenbezogenen Identifikatoren enthalten (Property 14–16) und dass im Modus B nach dem Versand keine E-Mail-Adresse persistiert ist.
