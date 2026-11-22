@@ -7,15 +7,16 @@ Das Kulturbarometer ist eine Webapplikation, die den gelebten Ist-Zustand der Un
 - **Administrationsbereich** (authentifiziert): Verwaltung von Unternehmenswerten, Fokussätzen, KI-gestützter Item-Generierung und -Verfeinerung, Item-Export/-Import, Items samt Freigabe-Workflow, Kampagnen, Verteilung, Auswertung und Export.
 - **Teilnahmebereich** (anonym): Beantwortung der Umfrage einer aktiven Kampagne über einen öffentlichen Kampagnen-Link oder einen individuellen Einmal-Link.
 
-Das zentrale fachliche Alleinstellungsmerkmal ist die **dreifache Perspektive** (Selbst, Team, Führung): Jedes Item trägt genau eine in seiner Formulierung ausgedrückte Perspektive, und der gewichtete **Ist-Score** wird je Unternehmenswert **und** je Perspektive getrennt berechnet. Hinzu kommen zwei Wege der Item-Entstehung (**KI-gestützte Generierung/Verfeinerung** über einen API-Zugang oder **JSON-Export/-Import** für externe Erstellung), ein **Item-Statusmodell** (zur Prüfung → freigegeben → deaktiviert), zwei **anonymitätswahrende Verteilmodi**, eine **zufällige Teilnehmer-Teilmenge** je Teilnehmer und ein **Kampagnen-Snapshot**, der reproduzierbare Berechnungen über die Zeit erlaubt. Der Snapshot ist nach Aktivierung unveränderlich; einzige Ausnahme ist die **Deaktivierung einzelner Items** während einer laufenden Kampagne, um missverstandene Items aus der Wertung zu nehmen.
+Das zentrale fachliche Alleinstellungsmerkmal ist die **dreifache Perspektive** (Selbst, Team, Führung): Jedes Item trägt genau eine in seiner Formulierung ausgedrückte Perspektive, und der gewichtete **Ist-Score** wird je Unternehmenswert **und** je Perspektive getrennt berechnet. Hinzu kommen zwei Wege der Item-Entstehung (**KI-gestützte Generierung/Verfeinerung** über einen API-Zugang oder **JSON-Export/-Import** für externe Erstellung), ein **Item-Statusmodell** (zur Prüfung → freigegeben → deaktiviert), zwei **anonymitätswahrende Verteilmodi**, eine **zufällige Teilnehmer-Teilmenge** je Teilnehmer und ein **Kampagnen-Snapshot**, der reproduzierbare Berechnungen über die Zeit erlaubt. Der Snapshot ist nach Aktivierung unveränderlich; einzige Ausnahme ist die **Deaktivierung einzelner Items** während einer laufenden Kampagne, um missverstandene Items aus der Wertung zu nehmen. Damit Kampagnen auf derselben Fragenbasis vergleichbar bleiben, werden Items **versioniert**: Sobald eine Item-Version in einer aktivierten Kampagne verwendet wurde, ist sie unveränderlich; jede Änderung (manuell oder KI-gestützt) erzeugt eine neue Item-Version im Status `ZUR_PRUEFUNG`, die vorherige Version bleibt unverändert. Der Kampagnen-Pool einer früheren Kampagne lässt sich mit denselben Item-Versionen in eine neue Kampagne übernehmen.
 
 Dieses Dokument beschreibt die Architektur, den Technologie-Stack, das Datenmodell, die Komponenten, die zentralen Abläufe, die Korrektheitseigenschaften (für Property-Based Testing), die Fehlerbehandlung sowie ein Sicherheits- und Datenschutzkonzept, das die Anonymität der Teilnehmer in den Mittelpunkt stellt.
 
 ### Designziele und Leitprinzipien
 
 - **Anonymität by design**: Keine personenbezogenen Identifikationsdaten (Name, E-Mail, IP, Benutzerkennung) werden zusammen mit Antworten gespeichert. Im E-Mail-Verteilmodus wird die Adresse ausschließlich transient zum Versand verwendet und nie persistiert (Anforderung 7.7, 8.9).
-- **Reproduzierbarkeit**: Der Kampagnen-Snapshot friert Items, Werte-Zuordnungen und Gewichtungen bei Aktivierung ein, sodass Berechnungen und Verlauf stabil bleiben (Anforderung 6.11, 6.12, 6.21). Die einzige zulässige Änderung ist das Setzen von `deactivatedAt` an einem SnapshotItem (6.12, 6.13); Texte, Zuordnungen und Gewichtungen bleiben unverändert.
-- **Qualitätssicherung der Items**: Nur freigegebene Items gelangen in Kampagnen-Pools und Umfragen (5.17, 6.5). Items aus KI und Import durchlaufen denselben Prüf- und Freigabe-Workflow.
+- **Reproduzierbarkeit**: Der Kampagnen-Snapshot friert Items, Werte-Zuordnungen und Gewichtungen bei Aktivierung ein, sodass Berechnungen und Verlauf stabil bleiben (Anforderung 6.13, 6.14, 6.24). Die einzige zulässige Änderung ist das Setzen von `deactivatedAt` an einem SnapshotItem (6.14, 6.15); Texte, Zuordnungen und Gewichtungen bleiben unverändert.
+- **Unveränderlichkeit verwendeter Item-Versionen und Vergleichbarkeit**: Eine Item-Version, die Teil eines Snapshots einer aktivierten Kampagne ist, gilt als „verwendet" und ist unveränderlich und nicht löschbar (5.19, 5.20, 5.27). Änderungen führen zu einer neuen Item-Version (5.21, 5.22); Kampagnen, die dieselben Item-Versionen nutzen, rechnen auf identischen Texten und Gewichtungen und sind damit vergleichbar (6.7, 6.24).
+- **Qualitätssicherung der Items**: Nur freigegebene Item-Versionen gelangen in Kampagnen-Pools und Umfragen (5.17, 6.5). Items aus KI und Import durchlaufen denselben Prüf- und Freigabe-Workflow.
 - **Austauschbarkeit der KI**: Die LLM-Anbindung ist als Port/Adapter gekapselt, sodass der konkrete Anbieter ersetzbar ist und KI-Ausgaben als nicht vertrauenswürdig behandelt werden (Anforderung 3).
 - **Importierte Dateien sind nicht vertrauenswürdig**: Item-Importe werden wie externe Eingaben mit derselben strikten Validierung wie manuell erfasste Items behandelt (Anforderung 4).
 - **Trennung der Bereiche**: Administration und Teilnahme laufen über getrennte Routen, Middleware und Berechtigungen (Anforderung 1.4).
@@ -85,25 +86,30 @@ Die beiden Bereiche teilen sich dieselbe Codebasis, aber getrennte Einstiegspunk
 
 ### Item-Statusmodell
 
-Jedes Item besitzt genau einen Status (5.12). Es gibt keine separate Entwurfs-Entität: Ein generierter oder importierter Vorschlag ist einfach ein `Item` im Status `ZUR_PRUEFUNG`. Begründung: GeneratedItemDraft und Item hätten dieselben Felder, dieselben Validierungsregeln (3.6, 3.7, 3.10, 4.4 verweisen auf Anforderung 5) und dieselben Aktionen (bearbeiten, verfeinern, freigeben, verwerfen). Ein einziges Modell vermeidet Kopier-/Mapping-Logik und doppelte Validierung.
+Jede Item-Version besitzt genau einen Status (5.12). Es gibt keine separate Entwurfs-Entität: Ein generierter oder importierter Vorschlag ist einfach eine `Item`-Version im Status `ZUR_PRUEFUNG`. Begründung: GeneratedItemDraft und Item hätten dieselben Felder, dieselben Validierungsregeln (3.6, 3.7, 3.10, 4.4 verweisen auf Anforderung 5) und dieselben Aktionen (bearbeiten, verfeinern, freigeben, verwerfen). Ein einziges Modell vermeidet Kopier-/Mapping-Logik und doppelte Validierung.
+
+**„Verwendet" ist ein orthogonales Kennzeichen, kein Status.** Eine Item-Version ist verwendet, sobald sie Teil eines Snapshots einer aktivierten Kampagne (Status `AKTIV` oder `ABGESCHLOSSEN`) ist (5.19). Die Zugehörigkeit zu einem Entwurfs-Pool zählt nicht (5.19). Technisch wird das Kennzeichen als `Item.usedAt` (nullable, einmalig in der Aktivierungstransaktion gesetzt, 6.13) geführt. Der Status gehört zur Item-Version und ändert nie ihren Inhalt (Glossar „Item-Status"). Das Kennzeichen steuert, ob Bearbeiten und Verfeinern **in place** (nicht verwendet) oder **als neue Version** (verwendet) erfolgen.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> ZUR_PRUEFUNG: anlegen / KI-Generierung / Import (3.8, 4.6, 5.1)
+    [*] --> ZUR_PRUEFUNG: anlegen / KI-Generierung / Import / neue Version (3.8, 4.6, 5.1, 5.21)
     ZUR_PRUEFUNG --> FREIGEGEBEN: freigeben, Regeln erfüllt (5.13)
-    ZUR_PRUEFUNG --> ZUR_PRUEFUNG: bearbeiten / KI-Verfeinerung (3.13, 5.18)
-    ZUR_PRUEFUNG --> [*]: verwerfen / löschen (3.11, 5.19)
-    FREIGEGEBEN --> ZUR_PRUEFUNG: bearbeiten (5.15)
-    FREIGEGEBEN --> DEAKTIVIERT: deaktivieren (5.16, 6.13)
-    DEAKTIVIERT --> FREIGEGEBEN: überarbeiten + erneut freigeben (5.13, 6.20)
-    DEAKTIVIERT --> ZUR_PRUEFUNG: bearbeiten / KI-Verfeinerung (3.13, 5.18)
+    ZUR_PRUEFUNG --> ZUR_PRUEFUNG: nicht verwendet: bearbeiten / KI-Verfeinerung in place (3.13, 5.11, 5.18)
+    ZUR_PRUEFUNG --> [*]: verwerfen / löschen, wenn nicht verwendet (3.11, 5.26)
+    FREIGEGEBEN --> ZUR_PRUEFUNG: nicht verwendet: bearbeiten in place (5.15)
+    FREIGEGEBEN --> DEAKTIVIERT: deaktivieren (5.16, 6.15)
+    DEAKTIVIERT --> FREIGEGEBEN: unverändert erneut freigeben, auch wenn verwendet (5.13, 5.25, 6.22)
+    DEAKTIVIERT --> ZUR_PRUEFUNG: nicht verwendet: bearbeiten / KI-Verfeinerung in place (3.13, 5.18)
 ```
 
+Für **verwendete** Versionen (Status `FREIGEGEBEN` oder `DEAKTIVIERT`) gibt es keinen Übergang auf derselben Zeile: Bearbeiten und Verfeinern erzeugen eine **neue Version** (eigene Zeile, Start im Zustand `ZUR_PRUEFUNG`, Pfeil `[*] → ZUR_PRUEFUNG`), die Vorgängerversion behält Inhalt und Status (5.21, 5.23, 3.14, 6.23).
+
 Regeln:
-- **Freigabe** (`approveItem`) wendet dieselben Gültigkeitsregeln wie die Item-Verwaltung an (5.1–5.9). Bei Verletzung bleibt der Status erhalten, die Fehlermeldung benennt die verletzte Regel (5.14).
-- **Bearbeiten eines freigegebenen Items** setzt den Status auf `ZUR_PRUEFUNG` (5.15); bestehende Snapshots bleiben unberührt (5.24).
-- **Nur `FREIGEGEBEN`** darf einem Kampagnen-Pool zugeordnet werden (5.17, 6.4, 6.5); die Aktivierung prüft den Pool erneut und scheitert bei nicht freigegebenen Items (6.9).
-- **Deaktivierung in laufender Kampagne** setzt zusätzlich `SnapshotItem.deactivatedAt` und den Quell-Item-Status auf `DEAKTIVIERT` (6.13).
+- **Freigabe** (`approveItem`) wendet dieselben Gültigkeitsregeln wie die Item-Verwaltung an (5.1–5.9). Bei Verletzung bleibt der Status erhalten, die Fehlermeldung benennt die verletzte Regel (5.14). Die unveränderte Freigabe einer verwendeten, deaktivierten Version ändert ausschließlich den Status (5.25, 6.22).
+- **Bearbeiten einer nicht verwendeten, freigegebenen Version** setzt den Status auf `ZUR_PRUEFUNG` (5.15); bestehende Snapshots bleiben unberührt (5.31).
+- **Bearbeiten/Verfeinern einer verwendeten Version** legt eine neue Version mit nächsthöherer Versionsnummer an; die neue Version wird wie ein neues Item behandelt (5.22).
+- **Nur `FREIGEGEBEN`** darf einem Kampagnen-Pool zugeordnet werden (5.17, 6.4, 6.5); die Aktivierung prüft den Pool erneut und scheitert bei nicht freigegebenen Items (6.11).
+- **Deaktivierung in laufender Kampagne** setzt zusätzlich `SnapshotItem.deactivatedAt` und den Quell-Item-Status auf `DEAKTIVIERT` (6.15); der Inhalt der Item-Version bleibt unverändert (5.16).
 
 ## Components and Interfaces
 
@@ -122,12 +128,17 @@ Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Va
 
 - `createValue`, `updateValue`, `deleteValue`, `listValues`.
 - `addFocusSentence`, `updateFocusSentence`, `removeFocusSentence`.
-- Regeln: Name 1–100 Zeichen, eindeutig und nicht nur Leerzeichen (2.1–2.3); Beschreibung 0–1.000 Zeichen; Fokussatz 1–500 Zeichen (2.4, 2.5); Löschschutz bei aktiver Kampagnenzuordnung (2.8, 2.9); Leerzustand-Hinweis (2.11).
+- Regeln: Name 1–100 Zeichen, eindeutig und nicht nur Leerzeichen (2.1–2.3); Beschreibung 0–1.000 Zeichen; Fokussatz 1–500 Zeichen (2.4, 2.5); Löschschutz bei aktiver Kampagnenzuordnung (2.8, 2.9); Leerzustand-Hinweis (2.12).
+- **Löschschutz durch verwendete Item-Versionen (2.8, 2.10)**: `deleteValue` prüft vor dem Löschen in einer Transaktion, ob mindestens eine `ValueAssignment` auf den Wert zeigt, deren `Item.usedAt IS NOT NULL` ist. In diesem Fall wird die Löschung abgelehnt (`ValueReferencedByUsedItemError`), der Wert bleibt unverändert, und die Meldung weist auf die Referenzierung durch verwendete Item-Versionen hin (2.10). Zusätzlich verhindert ein Fremdschlüssel `ValueAssignment.valueId → Value.id` mit `ON DELETE RESTRICT` als Datenbank-Sicherung das Löschen auch bei Umgehung der Domänenprüfung. Nur Werte ohne Kampagnenzuordnung und ohne Referenz durch verwendete Versionen sind löschbar (2.8); `ValueAssignment`s nicht verwendeter Item-Versionen entfernt die Anwendung in derselben Transaktion explizit vor dem Löschen des Werts (der Fremdschlüssel bleibt `RESTRICT`).
+- **Bearbeiten bleibt erlaubt (2.7)**: Name, Beschreibung und Fokussätze eines Werts dürfen auch dann geändert werden, wenn verwendete Item-Versionen den Wert referenzieren. Verwendete Snapshots bleiben davon unberührt, da `SnapshotAssignment.valueNameAtSnapshot` den Namen zum Aktivierungszeitpunkt einfriert; `ValueAssignment.valueId` ist stabil.
 
 ### ItemGenerationModule – KI-gestützte Generierung und Verfeinerung (Anforderung 3)
 
 - `generateItems(valueId) -> Item[]` – erzeugt je Fokussatz drei Varianten (Selbst/Team/Führung) über den `ItemGenerationPort` (3.1, 3.3). Die validierten Ergebnisse werden als `Item` im Status `ZUR_PRUEFUNG` angelegt (3.8).
-- `refineItem(itemId, instruction?) -> Item` – nur für Items im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT`; `instruction` 0–1.000 Zeichen (3.13). Das validierte Ergebnis wird atomar am Item gespeichert und setzt den Status auf `ZUR_PRUEFUNG` (3.13, 5.18); das verfeinerte Item wird erst nach erneuter Freigabe verwendet (3.14).
+- `refineItem(itemId, instruction?) -> Item` – für Items im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT` (nicht verwendet) bzw. `FREIGEGEBEN`/`DEAKTIVIERT` (verwendet); `instruction` 0–1.000 Zeichen (3.13, 3.14). Die Operation verzweigt anhand `usedAt`:
+  - **nicht verwendet**: Das validierte Ergebnis wird atomar an der Item-Version gespeichert und setzt den Status auf `ZUR_PRUEFUNG` (3.13, 5.18).
+  - **verwendet**: Das validierte Ergebnis wird über `ItemsModule.createNewVersion(predecessorId, changes)` als neue Item-Version derselben Familie mit nächsthöherer Versionsnummer im Status `ZUR_PRUEFUNG` gespeichert; die verwendete Version bleibt unverändert (3.14, 5.21).
+  - Die verfeinerte Item-Version bzw. neue Version wird erst nach erneuter Freigabe in Kampagnen und Umfragen verwendet (3.15). Die Verfeinerung einer nicht verwendeten, `FREIGEGEBEN`en Version bleibt abgelehnt (3.13); der Administrator bearbeitet sie stattdessen manuell (5.15) oder deaktiviert sie zuerst.
 - `ItemGenerationPort` (Abstraktion):
   - `generate(input: ValueGenerationContext) -> RawItemSuggestion[]`
   - `refine(item: ItemSnapshotForAi, valueContext: ValueGenerationContext[], instruction?: string) -> RawItemSuggestion` – `valueContext` enthält Name, Beschreibung und Fokussätze aller dem Item zugeordneten Unternehmenswerte (3.13).
@@ -135,7 +146,7 @@ Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Va
   - **Nicht vertrauenswürdige Ausgabe**: Jede Rohantwort von `generate` **und** `refine` wird gegen dasselbe strikte, geteilte Zod-Item-Schema validiert und bereinigt (Perspektive ∈ {Selbst, Team, Führung}, Item-Typ ∈ {Frage, Situation/Use-Case}, Text 1–500, Gewichtungen 0–100 %, mindestens eine Zuordnung > 0 %, Werte-Referenzen müssen existieren), bevor sie als Vorschlag erscheint (3.4, 3.5, 3.8).
 - Prüf-Workflow über ItemsModule: `updateItem` (3.6, 3.7, 3.10), `approveItem` (3.9), `deleteItem` als Verwerfen eines Vorschlags (3.11).
 - Fehlerfall Generierung: Schlägt sie fehl oder ist die Ausgabe ungültig, gilt immer die Konjunktion aus: keine Items gespeichert, Wert-Vorgaben unverändert und Fehlermeldung mit Wiederholungshinweis (3.12). Fehlender Fokussatz blockiert die Generierung (3.2).
-- Fehlerfall Verfeinerung: Schlägt `refine` fehl oder ist die Ausgabe ungültig, wird **keine** Änderung am Item gespeichert, Item und Wert-Vorgaben bleiben unverändert, und es erscheint eine Fehlermeldung mit Wiederholungshinweis (3.15). Zur Atomarität läuft Validierung vor dem Schreiben; das Speichern erfolgt in einer Transaktion.
+- Fehlerfall Verfeinerung: Schlägt `refine` fehl oder ist die Ausgabe ungültig, wird **keine** Änderung am Item gespeichert, Item und Wert-Vorgaben bleiben unverändert, und es erscheint eine Fehlermeldung mit Wiederholungshinweis (3.16). Das gilt auch für die Verfeinerung einer verwendeten Version: Es wird **keine** neue Item-Version angelegt und die verwendete Version bleibt unverändert (3.16). Zur Atomarität läuft Validierung vor dem Schreiben; das Speichern (Änderung bzw. Anlegen der neuen Version) erfolgt in einer Transaktion.
 
 ### ItemExchangeModule – Item-Export und -Import (Anforderung 4)
 
@@ -171,24 +182,38 @@ Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Va
 
 ### ItemsModule – Items verwalten (Anforderung 5)
 
-- `createItem`, `updateItem`, `deleteItem`, `listItemsByValue`, `approveItem`, `deactivateItem` (außerhalb laufender Kampagne).
-- Regeln: Text 1–500 Zeichen (5.1, 5.2); genau eine Perspektive als Pflicht (5.3, 5.4); Perspektivwechsel mit Textanpassung (5.5); Gewichtung je Zuordnung 0–100 % (5.6, 5.7); mindestens eine Zuordnung > 0 % (5.8); Mehrfachzuordnung mit je eigener Gewichtung, mehrere dürfen 100 % tragen (5.9); Verwaltung der vorgeschlagenen Zuordnungen (5.10); Bearbeiten mit denselben Regeln (5.11).
-- Statuslogik: neu angelegte Items → `ZUR_PRUEFUNG` (5.1); `approveItem` nur bei erfüllten Regeln (5.13, 5.14); `updateItem` auf `FREIGEGEBEN` → `ZUR_PRUEFUNG` (5.15); `deactivateItem` außerhalb einer laufenden Kampagne: `FREIGEGEBEN` → `DEAKTIVIERT` (5.16); bearbeitete/verfeinerte Items werden bis zur erneuten Freigabe nicht in Umfragen verwendet (5.18). Ausschließlich `FREIGEGEBEN` ist poolfähig (5.17).
-- Löschschutz bei aktiver Kampagne (5.19, 5.20); Anzeige aller Items eines Werts mit Gewichtung > 0 % (5.21); Items unabhängig von Kampagnen verwaltbar, ohne bestehende Snapshots zu verändern (5.22–5.24).
+- `createItem`, `updateItem`, `createNewVersion`, `deleteItem`, `listItemsByValue`, `listFamilyVersions`, `approveItem`, `deactivateItem` (außerhalb laufender Kampagne).
+- Regeln: Text 1–500 Zeichen (5.1, 5.2); genau eine Perspektive als Pflicht (5.3, 5.4); Perspektivwechsel mit Textanpassung (5.5); Gewichtung je Zuordnung 0–100 % (5.6, 5.7); mindestens eine Zuordnung > 0 % (5.8); Mehrfachzuordnung mit je eigener Gewichtung, mehrere dürfen 100 % tragen (5.9); Verwaltung der vorgeschlagenen Zuordnungen (5.10); Bearbeiten nicht verwendeter Items mit denselben Regeln (5.11).
+- Statuslogik: neu angelegte Items → `ZUR_PRUEFUNG` (5.1); `approveItem` nur bei erfüllten Regeln (5.13, 5.14); `deactivateItem` außerhalb einer laufenden Kampagne: `FREIGEGEBEN` → `DEAKTIVIERT`, nur der Status ändert sich (5.16); bearbeitete/verfeinerte bzw. neu entstandene Versionen werden bis zur erneuten Freigabe nicht in Umfragen verwendet (5.18). Ausschließlich `FREIGEGEBEN` ist poolfähig (5.17).
+- **`updateItem(itemId, changes)`** verzweigt anhand `usedAt` (5.11, 5.15, 5.21):
+  - `usedAt IS NULL`: Änderung in place; war der Status `FREIGEGEBEN`, wechselt er auf `ZUR_PRUEFUNG` (5.15).
+  - `usedAt IS NOT NULL` (Status `FREIGEGEBEN` oder `DEAKTIVIERT`): Der Domain-Guard verbietet jede In-place-Änderung (`UsedItemImmutableError`); stattdessen delegiert `updateItem` an `createNewVersion(itemId, changes)` (5.20, 5.21).
+- **`createNewVersion(predecessorId, changes)`** (5.21, 5.22, 5.23): läuft in **einer Transaktion**: (1) Gültigkeitsregeln auf das Ergebnis `Vorgänger + changes` anwenden (5.1–5.9); (2) Vorgänger-Zeile lesen und Familien-Zeile `ItemFamily` mit `SELECT … FOR UPDATE` sperren; (3) `versionNumber = max(versionNumber der Familie) + 1` bestimmen; (4) neue `Item`-Zeile (`status = ZUR_PRUEFUNG`, `predecessorId`, `usedAt = NULL`, `origin` des Vorgängers bzw. `KI` bei Verfeinerung) samt kopierten und geänderten `ValueAssignment`s anlegen. Der Vorgänger bleibt unverändert, Inhalt und Status inklusive (5.23); Ist-Bewertungen früherer Versionen werden der neuen Version nie zugerechnet (5.22). Nebenläufigkeit: Die Zeilensperre serialisiert parallele Versionierungen derselben Familie; zusätzlich sichert `UNIQUE (familyId, versionNumber)` ab. Bei einer Unique-Verletzung (z. B. andere Isolation, abweichender Sperrpfad) wiederholt der Service die Transaktion bis zu 3-mal mit neu gelesenem Maximum und meldet danach `VersionConflictError`.
+- **`approveItem` für verwendete, deaktivierte Versionen**: unverändertes Freigeben ändert ausschließlich den Status auf `FREIGEGEBEN`, legt keine neue Version an und stellt die Version für später erstellte Pools bereit (5.25, 6.22).
+- **`listFamilyVersions(familyId)`**: liefert alle Versionen der Familie aufsteigend nach `versionNumber` mit `{ itemId, versionNumber, status, used (usedAt IS NOT NULL), predecessorId }` (5.24).
+- **`deleteItem(itemId)`** (5.26, 5.27): Ist die Version Teil eines `SnapshotItem` einer Kampagne im Status `AKTIV` oder `ABGESCHLOSSEN` (gleichbedeutend mit `usedAt IS NOT NULL`), wird die Löschung abgelehnt (`UsedItemNotDeletableError`) und die Version unverändert beibehalten (5.27). Sonst entfernt die Operation in einer Transaktion die Version samt `ValueAssignment`s, nimmt sie aus allen Entwurfs-Pools (`CampaignPoolItem`) heraus und bestätigt den Erfolg (5.26). Eine nicht verwendete Version kann keine Nachfolger besitzen (Nachfolger entstehen nur aus verwendeten Versionen, `usedAt` wird nie zurückgesetzt); die Löschung hinterlässt daher keine hängenden `predecessorId`-Verweise. Hat die Familie danach keine Version mehr, wird die leere `ItemFamily` mitgelöscht.
+- Anzeige aller Items eines Werts mit Gewichtung > 0 % (5.28); Items sind unabhängig von Kampagnen verwaltbar (5.29), ohne bestehende Snapshots zu verändern (5.30, 5.31).
 
 ### CampaignModule – Kampagnen (Anforderung 6)
 
-- `createCampaign`, `assignPool`, `setItemsPerParticipant`, `activateCampaign`, `closeCampaign`, `deactivateSnapshotItem`.
-- Status-Maschine `Entwurf → Aktiv → Abgeschlossen` (6.1, 6.10, 6.22, 6.23).
-- `assignPool` akzeptiert nur Items mit Status `FREIGEGEBEN`; sonst wird die Zuordnung abgelehnt, der Pool bleibt unverändert, Fehler „nur freigegebene Items" (6.4, 6.5).
-- `activateCampaign` prüft in einer Transaktion (mit Zeilen-Lock auf den Pool-Items, damit keine Race mit `updateItem`/Deaktivierung entsteht): Item-Anzahl je Teilnehmer 1..Poolgröße (6.6–6.8), mindestens ein Wert und Item (6.8) und **alle Pool-Items weiterhin `FREIGEGEBEN`**; andernfalls Ablehnung unter Nennung der betroffenen Items (6.9). Danach Erzeugung des **Kampagnen-Snapshots** (eingefrorene Items einschließlich Item-Text, Item-Typ und Perspektive sowie Werte-Zuordnungen und Gewichtungen, jedes SnapshotItem mit `deactivatedAt = NULL`) (6.10, 6.11). Teilnehmer einer aktiven Kampagne sehen ausschließlich diese Snapshot-Version ohne deaktivierte Items (5.23); spätere Item-Änderungen lassen den Snapshot unberührt (5.24).
-- Unveränderlichkeit des Snapshots nach Aktivierung: Änderungen an Pool, Zuordnungen oder Gewichtungen werden abgelehnt (6.12); Änderungen werden nur durch eine neue Kampagne wirksam (6.21). Abgeschlossene Kampagnen lehnen weitere Antworten ab (6.24).
-- **`deactivateSnapshotItem(campaignId, snapshotItemId, confirmLastActive?: boolean)`** (6.13–6.19):
-  - Nur bei Kampagnenstatus `AKTIV`; sonst Ablehnung mit Hinweis (6.14).
-  - Setzt in **einer Transaktion** `SnapshotItem.deactivatedAt = now()` und den Status des Quell-`Item` auf `DEAKTIVIERT`; Snapshots anderer Kampagnen bleiben unverändert (6.13). Nichts anderes am Snapshot wird verändert (6.12).
-  - Bereits deaktivierte SnapshotItems können nicht reaktiviert werden; es gibt keine Reaktivierungs-Operation, ein entsprechender Versuch wird mit Hinweis „nur in später erstellten Kampagnen wieder verwendbar" abgelehnt (6.19). Ein überarbeitetes und erneut freigegebenes Item wird nur in später aktivierten Kampagnen verwendet (6.20).
-  - Ist das Item das **letzte aktive** SnapshotItem, liefert die Operation zunächst eine Warnung („neue Teilnehmer können die Umfrage danach nicht mehr öffnen") und führt die Deaktivierung nur mit `confirmLastActive = true` aus (6.18).
-  - Sinkt dadurch `activeCount < itemsPerParticipant`, enthält die Antwort bzw. die Kampagnenübersicht den Admin-Hinweis auf die verringerte Teilmengengröße (6.17); der Hinweis wird aus dem aktuellen Zustand abgeleitet und nicht gespeichert.
+- `createCampaign`, `assignPool`, `takeOverPool`, `setItemsPerParticipant`, `activateCampaign`, `closeCampaign`, `deactivateSnapshotItem`.
+- Status-Maschine `Entwurf → Aktiv → Abgeschlossen` (6.1, 6.12, 6.25, 6.26).
+- `assignPool` akzeptiert nur Item-Versionen mit Status `FREIGEGEBEN`; sonst wird die Zuordnung abgelehnt, der Pool bleibt unverändert, Fehler „nur freigegebene Items" (6.4, 6.5). Der Entwurfs-Pool referenziert konkrete Item-Versionen (`itemId`); die Mitgliedschaft im Entwurfs-Pool macht eine Version nicht zu „verwendet" (5.19).
+- **`takeOverPool(draftCampaignId, sourceCampaignId)`** (6.7, 6.8): nur für Kampagnen im Status `ENTWURF` als Ziel und `AKTIV` oder `ABGESCHLOSSEN` als Quelle (andernfalls Ablehnung). In einer Transaktion:
+  1. Die `itemVersionId`s der `SnapshotItem`s der Quellkampagne lesen (alle, auch dort deaktivierte; maßgeblich ist der aktuelle Status der Version).
+  2. Versionen mit aktuellem Status `FREIGEGEBEN` als `CampaignPoolItem` in den Pool der Entwurfskampagne eintragen (exakt dieselben Versionen, keine Kopien, keine neueren Versionen); die zugehörigen Unternehmenswerte ergeben sich aus den Werte-Zuordnungen dieser Versionen (6.7).
+  3. `itemsPerParticipant` der Quellkampagne als änderbaren Wert in den Entwurf übernehmen (6.7); er wird bei der Aktivierung gegen die tatsächliche Poolgröße geprüft (6.9), da der übernommene Wert größer als der übernommene Pool sein kann.
+  4. Versionen, die nicht mehr `FREIGEGEBEN` sind (z. B. in der Quellkampagne oder danach deaktiviert), werden **nicht** übernommen; der Rückgabewert `TakeOverResult { takenOverItemIds, skipped: [{ itemVersionId, familyId, versionNumber, text, status }] }` dient als Hinweis, der alle nicht übernommenen Versionen benennt (6.8). Der Hinweis wird aus dem Ergebnis abgeleitet und nicht persistiert.
+  Der vorbelegte Pool bleibt wie gewohnt über `assignPool` und Entfernen anpassbar (6.7).
+- `activateCampaign` prüft in einer Transaktion (mit Zeilen-Lock auf den Pool-Items, damit keine Race mit `updateItem`/`createNewVersion`/Deaktivierung entsteht): Item-Anzahl je Teilnehmer 1..Poolgröße (6.6, 6.9), mindestens ein Wert und Item (6.10) und **alle Pool-Items weiterhin `FREIGEGEBEN`**; andernfalls Ablehnung unter Nennung der betroffenen Items (6.11). Danach Erzeugung des **Kampagnen-Snapshots** (eingefrorene Items einschließlich Item-Text, Item-Typ und Perspektive sowie Werte-Zuordnungen und Gewichtungen, jedes SnapshotItem mit `itemVersionId` und `deactivatedAt = NULL`) (6.12, 6.13). **In derselben Transaktion** wird für jede Pool-Version `Item.usedAt = now()` gesetzt, sofern noch `NULL` (6.13); Snapshot-Erzeugung und Verwendet-Kennzeichnung sind damit atomar. Teilnehmer einer aktiven Kampagne sehen ausschließlich diese Snapshot-Version ohne deaktivierte Items (5.30); spätere Item-Änderungen und neue Item-Versionen lassen den Snapshot unberührt (5.31).
+- Unveränderlichkeit des Snapshots nach Aktivierung: Änderungen an Pool, Zuordnungen oder Gewichtungen werden abgelehnt (6.14); Änderungen an einem verwendeten Item wirken nur durch eine neue Item-Version in einer neu erstellten Kampagne, die den dann gültigen Stand als eigenen Snapshot erfasst (6.24). Abgeschlossene Kampagnen lehnen weitere Antworten ab (6.27).
+- **`deactivateSnapshotItem(campaignId, snapshotItemId, confirmLastActive?: boolean)`** (6.15–6.21):
+  - Nur bei Kampagnenstatus `AKTIV`; sonst Ablehnung mit Hinweis (6.16).
+  - Setzt in **einer Transaktion** `SnapshotItem.deactivatedAt = now()` und den Status der Quell-Item-Version (`itemVersionId`) auf `DEAKTIVIERT`; nur der Status ändert sich, nie der Inhalt der Version (6.15, 5.16). Snapshots anderer Kampagnen bleiben unverändert. Nichts anderes am Snapshot wird verändert (6.14).
+  - Bereits deaktivierte SnapshotItems können nicht reaktiviert werden; es gibt keine Reaktivierungs-Operation, ein entsprechender Versuch wird mit Hinweis „nur in später erstellten Kampagnen wieder verwendbar" abgelehnt (6.21).
+  - **Nach der Deaktivierung** gilt für die verwendete, deaktivierte Version: (a) unverändert erneut freigeben → nur Status `FREIGEGEBEN`, nur für später erstellte Pools, bestehende Snapshots unverändert (6.22, 5.25); (b) überarbeiten (bearbeiten oder per KI verfeinern) → neue Version im Status `ZUR_PRUEFUNG`, die deaktivierte Version bleibt `DEAKTIVIERT`, die neue Version wirkt nach Freigabe nur in danach erstellten und aktivierten Kampagnen (6.23, 3.14, 5.21).
+  - Ist das Item das **letzte aktive** SnapshotItem, liefert die Operation zunächst eine Warnung („neue Teilnehmer können die Umfrage danach nicht mehr öffnen") und führt die Deaktivierung nur mit `confirmLastActive = true` aus (6.20).
+  - Sinkt dadurch `activeCount < itemsPerParticipant`, enthält die Antwort bzw. die Kampagnenübersicht den Admin-Hinweis auf die verringerte Teilmengengröße (6.19); der Hinweis wird aus dem aktuellen Zustand abgeleitet und nicht gespeichert.
 
 ### DistributionModule – Verteilung & Mehrfachteilnahme (Anforderung 7)
 
