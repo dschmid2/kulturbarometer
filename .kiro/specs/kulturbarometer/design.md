@@ -21,22 +21,23 @@ Dieses Dokument beschreibt die Architektur, den Technologie-Stack, das Datenmode
 - **Importierte Dateien sind nicht vertrauenswürdig**: Item-Importe werden wie externe Eingaben mit derselben strikten Validierung wie manuell erfasste Items behandelt (Anforderung 4).
 - **Trennung der Bereiche**: Administration und Teilnahme laufen über getrennte Routen, Middleware und Berechtigungen (Anforderung 1.4).
 
-### Technologie-Stack (Vorschlag und Begründung)
+### Technologie-Stack
 
-Für eine kleine bis mittlere Webapplikation mit einem authentifizierten Adminbereich, einem anonymen Teilnahmebereich und moderater Rechenlast wird folgender Stack vorgeschlagen:
+Verbindlich ist der in `.kiro/steering/tech.md` festgelegte Techstack: **React 19 + TypeScript + Vite** im Frontend, **Node.js + Express.js + TypeScript** im Backend (gemeinsame Typen mit dem Frontend) und **Supabase (PostgreSQL)** als Datenbank. Für die dort noch nicht festgelegten Bereiche (in der Tabelle mit *Vorschlag* gekennzeichnet) gelten die folgenden Angaben als unverbindliche Vorschläge bis zur Entscheidung:
 
 | Schicht | Technologie | Begründung |
 | --- | --- | --- |
-| Frontend | **React + TypeScript** (Vite, React Router, TanStack Query) | Komponentenbasierte UI für Admin-Formulare und den Schieberegler-Survey; TypeScript teilt Typen mit dem Backend; TanStack Query vereinfacht Server-State. |
-| Backend | **Node.js + TypeScript mit NestJS** (oder Fastify) | Ein Sprach-/Typ-Ökosystem über Front- und Backend; NestJS bietet Module, DI und Guards, was die Trennung Admin/Teilnahme und die Auth-Middleware sauber abbildet. |
-| Persistenz | **PostgreSQL** via **Prisma ORM** | Relationales Modell passt zu den stark verknüpften Entitäten (Wert↔Item↔Zuordnung↔Kampagne); transaktionale Integrität für Snapshot-Erzeugung, Deaktivierung und Antwort-Speicherung; `NUMERIC` für exakte Dezimalbewertungen. |
-| Authentifizierung | **Serverseitige Sessions** (signierte, HTTP-only Session-Cookies) mit Session-Store in PostgreSQL/Redis; Passwort-Hashing mit **Argon2id** | Serverseitige Sessions erlauben sofortige Invalidierung bei Logout (Anforderung 1.5) und Inaktivitäts-Timeout (Anforderung 1.6); Lockout-Zähler serverseitig (Anforderung 1.3). |
-| LLM-Integration | **Port/Adapter** (`ItemGenerationPort`) mit konkretem Adapter (z. B. OpenAI/Azure OpenAI/Bedrock), austauschbar per Konfiguration | Entkoppelt Kerndomäne vom Anbieter; erlaubt Mock-Adapter in Tests; strukturierte Ausgabe wird validiert, bevor sie als Vorschlag erscheint. |
-| E-Mail-Versand | **SMTP/Transactional-Mail-Adapter** (z. B. Nodemailer über einen Provider) | Nur transienter Versand der Einmal-Links; keine Persistenz der Adresse. |
-| Validierung | **Zod** (Frontend + Backend); JSON-Schema-Ausgabe für den Item-Export aus dem Zod-Schema (z. B. `z.toJSONSchema` ab Zod 4 bzw. `zod-to-json-schema`) | Geteilte Schema-Validierung für Eingaben (Textlängen, Gewichtungsbereiche, Bewertungsbereich). Ein einziges **geteiltes Item-Schema** dient ItemsModule, ItemGenerationModule und ItemExchangeModule; die Schemabeschreibung des Exports wird daraus abgeleitet und kann so nicht von der Validierung abweichen. |
-| Tests | **Vitest/Jest** + **fast-check** (Property-Based Testing) | fast-check deckt die universellen Eigenschaften der Ist-Score-Mathematik, der Teilmengen-Ziehung, der Deaktivierung und des Import-Round-Trips über viele Eingaben ab. |
+| Frontend | **React 19 + TypeScript + Vite** (verbindlich); *Vorschlag:* React Router, TanStack Query | Komponentenbasierte UI für Admin-Formulare und den Schieberegler-Survey; TypeScript teilt Typen mit dem Backend; TanStack Query vereinfacht Server-State. |
+| Backend | **Node.js + Express.js + TypeScript** (verbindlich) | Ein Sprach-/Typ-Ökosystem über Front- und Backend mit gemeinsamen Typen. Die Trennung Admin/Teilnahme wird über zwei getrennte Express-Router abgebildet; die Auth-Prüfung (`AuthGuard`) ist eine Express-Middleware, die ausschließlich vor den Admin-Router gehängt wird. Die fachlichen Module sind einfache TypeScript-Module mit expliziter Konstruktor-Injektion ihrer Ports (kein DI-Framework). |
+| Persistenz | **Supabase (PostgreSQL)** (verbindlich) | Relationales Modell passt zu den stark verknüpften Entitäten (Wert↔Item↔Zuordnung↔Kampagne); transaktionale Integrität für Snapshot-Erzeugung, Versionierung, Deaktivierung und Antwort-Speicherung; `NUMERIC` für exakte Dezimalbewertungen; Constraints und Trigger sichern Invarianten auf Datenbankebene ab. |
+| Datenbank-Zugriff | *Vorschlag:* direkte Postgres-Verbindung des Backends zur Supabase-Datenbank (z. B. `pg`/`postgres.js` mit typisierten Queries) für alle transaktionalen Abläufe; alternativ supabase-js mit Service-Key, wobei transaktionale Abläufe dann als Postgres-Funktionen (RPC) umgesetzt werden | Das Design verlangt mehrere Operationen in **einer Transaktion** inkl. Zeilensperren (`SELECT … FOR UPDATE`) – u. a. `activateCampaign`, `createNewVersion`, `deactivateSnapshotItem`, `submitAnswer`, `importItems`. supabase-js bietet über die REST-Schnittstelle keine clientseitigen Transaktionen; diese Abläufe müssen daher entweder über eine direkte Postgres-Verbindung oder als Datenbankfunktionen laufen. Der Datenbankzugriff erfolgt ausschließlich serverseitig; das Frontend greift nie direkt auf Supabase zu (Row Level Security bleibt aktiviert und gewährt anonymen Rollen keinen Zugriff). |
+| Authentifizierung | *Vorschlag:* **serverseitige Sessions** (signierte, HTTP-only Session-Cookies) mit Session-Tabelle in der Supabase-Datenbank; Passwort-Hashing mit **Argon2id**. Alternative: Supabase Auth | Serverseitige Sessions erlauben sofortige Invalidierung bei Logout (Anforderung 1.5), Inaktivitäts-Timeout (Anforderung 1.6) und einen serverseitigen Lockout-Zähler (Anforderung 1.3). Bei Supabase Auth müssen Lockout (5 Fehlversuche/15 Minuten) und 30-Minuten-Inaktivitäts-Timeout zusätzlich im Backend durchgesetzt werden. |
+| LLM-Integration | *Vorschlag:* **Port/Adapter** (`ItemGenerationPort`) mit konkretem Adapter (z. B. OpenAI/Azure OpenAI/Bedrock), austauschbar per Konfiguration | Entkoppelt Kerndomäne vom Anbieter; erlaubt Mock-Adapter in Tests; strukturierte Ausgabe wird validiert, bevor sie als Vorschlag erscheint. |
+| E-Mail-Versand | *Vorschlag:* **SMTP/Transactional-Mail-Adapter** (z. B. Nodemailer über einen Provider) | Nur transienter Versand der Einmal-Links; keine Persistenz der Adresse. |
+| Validierung | *Vorschlag:* **Zod** (Frontend + Backend); JSON-Schema-Ausgabe für den Item-Export aus dem Zod-Schema (z. B. `z.toJSONSchema` ab Zod 4 bzw. `zod-to-json-schema`) | Geteilte Schema-Validierung für Eingaben (Textlängen, Gewichtungsbereiche, Bewertungsbereich). Ein einziges **geteiltes Item-Schema** dient ItemsModule, ItemGenerationModule und ItemExchangeModule; die Schemabeschreibung des Exports wird daraus abgeleitet und kann so nicht von der Validierung abweichen. |
+| Tests | *Vorschlag:* **Vitest** + **fast-check** (Property-Based Testing) | fast-check deckt die universellen Eigenschaften der Ist-Score-Mathematik, der Teilmengen-Ziehung, der Deaktivierung und des Import-Round-Trips über viele Eingaben ab. |
 
-Der Stack ist bewusst gängig und leichtgewichtig; PostgreSQL + Prisma deckt die relationalen Anforderungen und die exakte Dezimalarithmetik ab, ohne eine schwergewichtige Infrastruktur zu erfordern. Alternativen (z. B. Python/FastAPI + SQLAlchemy, Hypothesis für PBT) sind möglich; die Designentscheidungen unten bleiben technologie-unabhängig gültig.
+Der Stack ist bewusst gängig und leichtgewichtig; Supabase/PostgreSQL deckt die relationalen Anforderungen, die Transaktionen und die exakte Dezimalarithmetik ab, ohne eine schwergewichtige Infrastruktur zu erfordern. Die fachlichen Designentscheidungen unten sind unabhängig vom konkreten Datenbank-Zugriffsweg gültig.
 
 ## Architecture
 
@@ -49,8 +50,8 @@ graph TB
         SurveyUI[Teilnahme-SPA<br/>React/TS]
     end
 
-    subgraph Server[Backend - NestJS]
-        AuthMW[Auth-/Session-Middleware<br/>+ Guards]
+    subgraph Server[Backend - Express.js]
+        AuthMW[Auth-/Session-Middleware<br/>AuthGuard]
         AdminAPI[Admin-API<br/>Werte, Items, Export/Import, Kampagnen, Auswertung, Export]
         PublicAPI[Teilnahme-API<br/>Survey, Antwort-Submit]
         AppSvc[Domain-/Application-Services]
@@ -63,8 +64,8 @@ graph TB
         MailAdapter[Mail-Adapter<br/>SMTP]
     end
 
-    DB[(PostgreSQL<br/>Prisma)]
-    Sessions[(Session-Store)]
+    DB[(Supabase<br/>PostgreSQL)]
+    Sessions[(Session-Tabelle<br/>Supabase)]
 
     AdminUI -->|authentifiziert| AuthMW --> AdminAPI --> AppSvc
     SurveyUI -->|anonym| PublicAPI --> AppSvc
@@ -76,13 +77,13 @@ graph TB
 
 ### Schichtenmodell
 
-- **Präsentations-/API-Schicht**: Zwei getrennte Router-Gruppen. Admin-Routen sind durch eine Auth-Guard geschützt (Anforderung 1.4). Teilnahme-Routen sind öffentlich, aber an Link-/Token-Gültigkeit und Kampagnenstatus gebunden (Anforderung 7, 8).
+- **Präsentations-/API-Schicht**: Zwei getrennte Express-Router. Admin-Routen sind durch die Auth-Middleware (`AuthGuard`) geschützt (Anforderung 1.4). Teilnahme-Routen sind öffentlich, aber an Link-/Token-Gültigkeit und Kampagnenstatus gebunden (Anforderung 7, 8).
 - **Application-/Domain-Schicht**: Reine Fachlogik (Validierungsregeln, Item-Statusübergänge, Ist-Score-Berechnung, Teilmengen-Ziehung, Snapshot-Erzeugung, Import-Prüfung). Diese Schicht ist frei von I/O und damit gut per PBT testbar.
-- **Infrastruktur-/Adapter-Schicht**: Persistenz (Prisma), LLM-Port, Mail-Port, Session-Store. Ports isolieren externe, nicht vertrauenswürdige bzw. austauschbare Abhängigkeiten.
+- **Infrastruktur-/Adapter-Schicht**: Persistenz (Supabase/PostgreSQL), LLM-Port, Mail-Port, Session-Tabelle. Ports isolieren externe, nicht vertrauenswürdige bzw. austauschbare Abhängigkeiten.
 
 ### Trennung von Admin und Teilnahme
 
-Die beiden Bereiche teilen sich dieselbe Codebasis, aber getrennte Einstiegspunkte und Berechtigungen. Ein nicht authentifizierter Aufruf einer Admin-Funktion wird von der Guard abgewiesen und auf die Anmeldeseite umgeleitet, ohne Funktionsdaten auszuliefern (Anforderung 1.4). Teilnahme-Endpunkte geben niemals Admin-Daten oder Rohantworten anderer Teilnehmer aus.
+Die beiden Bereiche teilen sich dieselbe Codebasis, aber getrennte Einstiegspunkte und Berechtigungen. Ein nicht authentifizierter Aufruf einer Admin-Funktion wird von der Auth-Middleware (`AuthGuard`) abgewiesen und auf die Anmeldeseite umgeleitet, ohne Funktionsdaten auszuliefern (Anforderung 1.4). Teilnahme-Endpunkte geben niemals Admin-Daten oder Rohantworten anderer Teilnehmer aus.
 
 ### Item-Statusmodell
 
@@ -121,7 +122,7 @@ Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Va
 - Schlüsselschnittstellen:
   - `login(credentials) -> Session | AuthError` – erstellt Session bei gültigen Daten (1.1), lehnt generisch ab (1.2), berücksichtigt Lockout (1.3).
   - `logout(sessionId) -> void` – beendet Session sofort und invalidiert Token (1.5).
-  - `AuthGuard` – schützt alle Admin-Routen (1.4) und erzwingt Inaktivitäts-Timeout von 30 Minuten (1.6).
+  - `AuthGuard` (Express-Middleware) – schützt alle Admin-Routen (1.4) und erzwingt Inaktivitäts-Timeout von 30 Minuten (1.6).
   - `LoginAttemptPolicy` – zählt fehlgeschlagene Versuche je Benutzer in einem 15-Minuten-Fenster; sperrt nach 5 Fehlversuchen für mindestens 15 Minuten (1.3).
 
 ### ValuesModule – Unternehmenswerte & Fokussätze (Anforderung 2)
@@ -230,7 +231,7 @@ Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Va
 
 ### SurveyModule – Umfrage beantworten (Anforderung 8)
 
-- `openSurvey(accessContext) -> TeilnehmerTeilmenge` – zieht je Teilnehmer eine zufällige Teilmenge aus den **zum Zeitpunkt des Öffnens aktiven** SnapshotItems (`deactivatedAt IS NULL`) im Umfang `k = min(itemsPerParticipant, activeCount)` (8.1, 6.17). Ist `activeCount < itemsPerParticipant`, werden alle aktiven Items gezogen. Die Umfrage rendert ausschließlich `SnapshotItem`-Inhalte (Item-Text, Item-Typ, Perspektive) der Kampagne, nie die aktuellen Quell-Items (5.23, 6.11).
+- `openSurvey(accessContext) -> TeilnehmerTeilmenge` – zieht je Teilnehmer eine zufällige Teilmenge aus den **zum Zeitpunkt des Öffnens aktiven** SnapshotItems (`deactivatedAt IS NULL`) im Umfang `k = min(itemsPerParticipant, activeCount)` (8.1, 6.17, 6.19). Ist `activeCount < itemsPerParticipant`, werden alle aktiven Items gezogen. Die Umfrage rendert ausschließlich `SnapshotItem`-Inhalte (Item-Text, Item-Typ, Perspektive) der Kampagne, nie die aktuellen Quell-Items (5.30, 6.13).
 - `submitAnswer(accessContext, ratings[], comments[])` – läuft in einer Transaktion, die `deactivatedAt` der Teilmengen-Items zum Zeitpunkt der Übermittlung liest:
   - Ratings dürfen nur Items der gezogenen Teilmenge referenzieren; Wertebereich 1,00–5,00 (8.2, 8.4).
   - **Erforderlich** ist eine Bewertung für jedes zum Übermittlungszeitpunkt noch aktive Item der Teilmenge; fehlen welche, wird abgelehnt, bisherige Eingaben bleiben erhalten und die Liste der fehlenden aktiven Items wird angezeigt (8.5).
@@ -269,12 +270,14 @@ erDiagram
     VALUE ||--o{ FOCUS_SENTENCE : besitzt
     VALUE ||--o{ VALUE_ASSIGNMENT : "wird zugeordnet durch"
     ITEM ||--o{ VALUE_ASSIGNMENT : hat
+    ITEM_FAMILY ||--|{ ITEM : "Versionen"
+    ITEM |o--o{ ITEM : "predecessorId"
 
     CAMPAIGN ||--o{ CAMPAIGN_POOL_ITEM : "Entwurf-Pool"
     CAMPAIGN_POOL_ITEM }o--|| ITEM : "nur FREIGEGEBEN"
 
     CAMPAIGN ||--o{ SNAPSHOT_ITEM : friert_ein
-    SNAPSHOT_ITEM }o--|| ITEM : "sourceItemId"
+    SNAPSHOT_ITEM }o--|| ITEM : "itemVersionId"
     SNAPSHOT_ITEM ||--o{ SNAPSHOT_ASSIGNMENT : hat
     SNAPSHOT_ASSIGNMENT }o--|| VALUE : referenziert
 
@@ -286,7 +289,7 @@ erDiagram
     CAMPAIGN ||--o{ ONE_TIME_TOKEN : "Modus B"
 ```
 
-Der frühere Entwurfs-Typ `GeneratedItemDraft` entfällt: Ein Vorschlag ist ein `Item` mit `status = ZUR_PRUEFUNG` (siehe Item-Statusmodell). Der Importbericht ist **keine** persistierte Entität (siehe ItemExchangeModule).
+Jede Zeile der Tabelle `Item` ist eine **Item-Version**; zusammengehörige Versionen sind über `ItemFamily` verbunden. Der frühere Entwurfs-Typ `GeneratedItemDraft` entfällt: Ein Vorschlag ist ein `Item` mit `status = ZUR_PRUEFUNG` (siehe Item-Statusmodell). Der Importbericht ist **keine** persistierte Entität (siehe ItemExchangeModule).
 
 ### Entitäten
 
@@ -302,8 +305,13 @@ Der frühere Entwurfs-Typ `GeneratedItemDraft` entfällt: Ein Vorschlag ist ein 
 **FocusSentence (Fokussatz)**
 - `id`, `valueId`, `text` (1–500).
 
-**Item**
-- `id`, `text` (1–500), `itemType` ∈ {`FRAGE`, `SITUATION`}, `perspective` ∈ {`SELBST`, `TEAM`, `FUEHRUNG`} (genau eine), `status` ∈ {`ZUR_PRUEFUNG`, `FREIGEGEBEN`, `DEAKTIVIERT`} (5.12), `origin` ∈ {`MANUELL`, `KI`, `IMPORT`} (informativ), `createdAt`, `updatedAt`. Vorschläge aus KI und Import sind Items im Status `ZUR_PRUEFUNG` (3.8, 4.6).
+**ItemFamily (Item-Familie)**
+- `id`, `createdAt`. Klammer um alle Item-Versionen, die auseinander hervorgegangen sind (Glossar „Item-Familie"). Wird beim Anlegen der ersten Version (manuell, KI oder Import) erzeugt und gelöscht, sobald ihre letzte Version gelöscht wird (5.26). Dient in `createNewVersion` als Sperrobjekt (`SELECT … FOR UPDATE`) für die Vergabe der Versionsnummer.
+
+**Item (Item-Version)**
+- `id`, `familyId` (→ `ItemFamily.id`), `versionNumber` (ganze Zahl ≥ 1, `UNIQUE (familyId, versionNumber)`), `predecessorId` (nullable, → `Item.id`; `NULL` bei Version 1), `text` (1–500), `itemType` ∈ {`FRAGE`, `SITUATION`}, `perspective` ∈ {`SELBST`, `TEAM`, `FUEHRUNG`} (genau eine), `status` ∈ {`ZUR_PRUEFUNG`, `FREIGEGEBEN`, `DEAKTIVIERT`} (5.12), **`usedAt`** (nullable Timestamp; `NULL` = nicht verwendet), `origin` ∈ {`MANUELL`, `KI`, `IMPORT`} (informativ), `createdAt`, `updatedAt`. Vorschläge aus KI und Import sind Items im Status `ZUR_PRUEFUNG` (3.8, 4.6).
+- **`usedAt`** wird in der Aktivierungstransaktion einmalig gesetzt (5.19, 6.13) und nie zurückgesetzt. Ist `usedAt` gesetzt, sind `text`, `itemType`, `perspective` und die zugehörigen `ValueAssignment`s unveränderlich (5.20); änderbar bleibt ausschließlich `status` (5.16, 5.25, 6.15, 6.22). Zusätzlich zum Domain-Guard sichert ein Datenbank-Trigger ab, dass bei `usedAt IS NOT NULL` nur `status` und `updatedAt` geändert werden, keine `ValueAssignment` der Version eingefügt, geändert oder gelöscht wird und die Version nicht gelöscht werden kann (5.27).
+- Neue Versionen entstehen nur aus verwendeten Versionen (`createNewVersion`, 5.21); eine Version mit Nachfolger ist daher immer verwendet und nicht löschbar.
 
 **ValueAssignment (Werte-Zuordnung)**
 - `id`, `itemId`, `valueId`, `weight` (NUMERIC, 0–100); eindeutig je `(itemId, valueId)`. Mehrere Zuordnungen je Item erlaubt, je mit eigener Gewichtung; mehrere dürfen 100 % tragen (5.9). Vorgeschlagene Zuordnungen sind direkt änderbare `ValueAssignment`s des Items (3.5, 5.10).
@@ -312,11 +320,11 @@ Der frühere Entwurfs-Typ `GeneratedItemDraft` entfällt: Ein Vorschlag ist ein 
 - `id`, `title` (1–200), `startDate`, `endDate` (> startDate), `status` ∈ {`ENTWURF`, `AKTIV`, `ABGESCHLOSSEN`}, `itemsPerParticipant`, `distributionMode` ∈ {`PUBLIC_LINK`, `EMAIL_ONE_TIME`}, `activatedAt`, `closedAt`.
 
 **CampaignPoolItem (Pool im Status Entwurf)**
-- `campaignId`, `itemId`. Nur Items mit Status `FREIGEGEBEN` dürfen eingetragen werden (6.4, 6.5); bei Aktivierung erneut geprüft (6.9) und in den Snapshot überführt.
+- `campaignId`, `itemId` (konkrete Item-Version). Die Mitgliedschaft macht eine Version nicht zu „verwendet" (5.19). Nur Item-Versionen mit Status `FREIGEGEBEN` dürfen eingetragen werden (6.4, 6.5); bei Aktivierung erneut geprüft (6.11) und in den Snapshot überführt.
 
 **SnapshotItem / SnapshotAssignment (Kampagnen-Snapshot)**
-- Bei Aktivierung eingefrorene Kopien der Pool-Items und ihrer Werte-Zuordnungen + Gewichtungen. `SnapshotItem`: `id`, `campaignId`, `sourceItemId`, `text`, `itemType`, `perspective`, **`deactivatedAt` (nullable Timestamp; `NULL` = aktiv)**. `SnapshotAssignment`: `id`, `snapshotItemId`, `valueId`, `valueNameAtSnapshot`, `weight`.
-- Nach Aktivierung sind alle Felder unveränderlich (5.24, 6.11, 6.12, 6.21); **einzige zulässige Änderung** ist das einmalige Setzen von `deactivatedAt` von `NULL` auf einen Zeitpunkt (6.13). Ein Zurücksetzen auf `NULL` ist nicht vorgesehen (6.19); dies wird zusätzlich per Datenbank-Trigger/Constraint abgesichert.
+- Bei Aktivierung eingefrorene Kopien der Pool-Items und ihrer Werte-Zuordnungen + Gewichtungen. `SnapshotItem`: `id`, `campaignId`, `itemVersionId` (→ `Item.id`, die eingefrorene Item-Version; `ON DELETE RESTRICT`), `text`, `itemType`, `perspective`, **`deactivatedAt` (nullable Timestamp; `NULL` = aktiv)**. `SnapshotAssignment`: `id`, `snapshotItemId`, `valueId`, `valueNameAtSnapshot`, `weight`.
+- Nach Aktivierung sind alle Felder unveränderlich (5.20, 5.31, 6.13, 6.14); **einzige zulässige Änderung** ist das einmalige Setzen von `deactivatedAt` von `NULL` auf einen Zeitpunkt (6.14, 6.15). Ein Zurücksetzen auf `NULL` ist nicht vorgesehen (6.21); dies wird zusätzlich per Datenbank-Trigger/Constraint abgesichert.
 - „Aktiv" ≙ `deactivatedAt IS NULL`. Snapshot und Antworten bleiben die alleinige Grundlage für Anzeige und Berechnung der Kampagne.
 
 **CampaignLink (Modus A)**
@@ -332,7 +340,7 @@ Der frühere Entwurfs-Typ `GeneratedItemDraft` entfällt: Ein Vorschlag ist ein 
 - `id`, `campaignId`, `submittedAt`, `drawnSnapshotItemIds[]` (die gezogene Teilnehmer-Teilmenge). Enthält **keine** personenbezogenen Identifikationsdaten (8.9). Die Bindung an Teilnahmekennung/Einmal-Token dient nur der Dedup, nicht der Identifikation.
 
 **AnswerItem (Ist-Bewertung + Kommentar)**
-- `id`, `participationId`, `snapshotItemId`, `rating` (NUMERIC(3,2), 1.00–5.00), `comment` (0–1.000, optional). Anonym (8.9). Bewertungen und Kommentare deaktivierter SnapshotItems bleiben gespeichert (6.16, 8.7), werden aber über den Vorfilter von Score, Auswertung und Export ausgeschlossen.
+- `id`, `participationId`, `snapshotItemId`, `rating` (NUMERIC(3,2), 1.00–5.00), `comment` (0–1.000, optional). Anonym (8.9). Bewertungen und Kommentare deaktivierter SnapshotItems bleiben gespeichert (6.18, 8.7), werden aber über den Vorfilter von Score, Auswertung und Export ausgeschlossen.
 
 ### Datentypen und Genauigkeit
 
@@ -395,7 +403,7 @@ Eine Eigenschaft (Property) ist ein Merkmal oder Verhalten, das über alle gült
 
 *Für alle* Kampagnen im Status "Aktiv" mit Snapshot-Pool `P`, Menge aktiver Items `A ⊆ P` mit `|A| ≥ 1` und Item-Anzahl je Teilnehmer `n` (mit `1 ≤ n ≤ |P|`) SOLL jede für einen neuen Teilnehmer gezogene Teilmenge genau `min(n, |A|)` Items enthalten; gilt `|A| < n`, SOLL die Teilmenge genau alle aktiven Items enthalten.
 
-**Validates: Requirements 6.6, 6.17, 8.1**
+**Validates: Requirements 6.6, 6.17, 6.19, 8.1**
 
 ### Property 10: Teilnehmer-Teilmenge stammt ausschließlich aus aktiven Pool-Items und ist duplikatfrei
 
@@ -413,7 +421,7 @@ Eine Eigenschaft (Property) ist ein Merkmal oder Verhalten, das über alle gült
 
 *Für alle* Kampagnen im Status "Aktiv" oder "Abgeschlossen" SOLL der zur Berechnung verwendete Snapshot (Texte, Typen, Perspektiven, Zuordnungen, Gewichtungen) invariant gegenüber späteren Änderungen, Neugenerierungen, Verfeinerungen oder Freigabe-/Statuswechseln der Quell-Items und Werte-Zuordnungen sein; eine Berechnung über denselben Antwortbestand SOLL unabhängig vom Zeitpunkt dasselbe Ergebnis liefern, solange keine Deaktivierung im Snapshot stattgefunden hat.
 
-**Validates: Requirements 5.22, 5.23, 5.24, 6.11, 6.12, 6.21**
+**Validates: Requirements 5.30, 5.31, 6.13, 6.14, 6.24**
 
 ### Property 13: Einmal-Token kann höchstens eine Teilnahme erzeugen
 
@@ -443,37 +451,37 @@ Eine Eigenschaft (Property) ist ein Merkmal oder Verhalten, das über alle gült
 
 *Für alle* Kampagnen und *für jeden* ausgelösten Statuswechsel SOLL ausschließlich die Sequenz Entwurf → Aktiv → Abgeschlossen erfolgreich sein; jeder andere Übergang SOLL abgelehnt werden und den bestehenden Status unverändert lassen.
 
-**Validates: Requirements 6.1, 6.10, 6.22, 6.23**
+**Validates: Requirements 6.1, 6.12, 6.25, 6.26**
 
 ### Property 18: Antworten nur bei aktiver Kampagne
 
 *Für alle* Antwortübermittlungen SOLL die Speicherung genau dann zugelassen werden, wenn die zugehörige Kampagne den Status "Aktiv" hat; bei Status "Entwurf" oder "Abgeschlossen" SOLL die Übermittlung abgelehnt werden.
 
-**Validates: Requirements 6.24, 7.11**
+**Validates: Requirements 6.27, 7.11**
 
 ### Property 19: Nur freigegebene Items gelangen in Pool und Snapshot
 
 *Für alle* Mengen von Items mit beliebigen Status aus {`ZUR_PRUEFUNG`, `FREIGEGEBEN`, `DEAKTIVIERT`} SOLL `assignPool` genau dann erfolgreich sein, wenn alle Items `FREIGEGEBEN` sind (andernfalls bleibt der Pool unverändert), und `activateCampaign` SOLL scheitern, wenn der Pool mindestens ein nicht freigegebenes Item enthält; jedes SnapshotItem einer aktivierten Kampagne SOLL aus einem zum Aktivierungszeitpunkt freigegebenen Item stammen.
 
-**Validates: Requirements 5.17, 6.4, 6.5, 6.9, 6.11**
+**Validates: Requirements 5.17, 6.4, 6.5, 6.11, 6.13**
 
 ### Property 20: Deaktivierte Items werden nicht mehr gezogen
 
 *Für alle* aktiven Kampagnen, *für alle* Mengen deaktivierter SnapshotItems `D` und *für alle* nach der Deaktivierung gezogenen Teilnehmer-Teilmengen SOLL die Teilmenge keine Items aus `D` enthalten; bereits vor der Deaktivierung gezogene Teilmengen SOLL die Deaktivierung nicht verändern. Ist `|P \ D| = 0`, SOLL kein Ziehungsergebnis und keine Verbrauchung eines Einmal-Tokens entstehen.
 
-**Validates: Requirements 6.15, 7.12, 8.1**
+**Validates: Requirements 6.15, 6.17, 7.12, 8.1**
 
 ### Property 21: Score schließt alle Bewertungen deaktivierter Items aus
 
 *Für alle* Snapshots, *für alle* Antwortmengen und *für alle* Mengen deaktivierter SnapshotItems `D` (mit beliebigem Abgabezeitpunkt der Bewertungen relativ zur Deaktivierung) SOLL der Ist-Score je Wert und Perspektive gleich dem Ist-Score sein, der auf dem Datensatz berechnet wird, aus dem alle Bewertungen zu Items in `D` entfernt wurden; ebenso SOLL die Anzahl beitragender Bewertungen je Perspektive diese Bewertungen nicht enthalten, und die je Item ermittelte Anzahl ausgeschlossener Bewertungen SOLL der Anzahl der gespeicherten Bewertungen dieses Items entsprechen.
 
-**Validates: Requirements 6.16, 9.1, 9.3, 9.5, 9.6**
+**Validates: Requirements 6.18, 9.1, 9.3, 9.5, 9.6**
 
 ### Property 22: Deaktivierung ist die einzige Mutation eines aktiven Snapshots
 
 *Für alle* aktiven Snapshots und *für jede* Folge von Mutationsversuchen (Pool ändern, Zuordnung/Gewichtung ändern, Text ändern, Reaktivieren, Deaktivieren) SOLL ausschließlich `deactivatedAt` bislang aktiver SnapshotItems von `NULL` auf einen Zeitpunkt gesetzt werden können; alle Texte, Typen, Perspektiven, Zuordnungen und Gewichtungen SOLLEN nach der Folge unverändert sein, bereits gesetzte `deactivatedAt` SOLLEN unverändert bleiben, die Snapshots anderer Kampagnen SOLLEN unverändert bleiben, und das Quell-Item eines deaktivierten SnapshotItems SOLL den Status `DEAKTIVIERT` haben.
 
-**Validates: Requirements 6.12, 6.13, 6.14, 6.19**
+**Validates: Requirements 6.13, 6.14, 6.15, 6.21**
 
 ### Property 23: Export/Import-Round-Trip erzeugt genau die Items in "zur Prüfung"
 
@@ -489,9 +497,9 @@ Eine Eigenschaft (Property) ist ein Merkmal oder Verhalten, das über alle gült
 
 ### Property 25: Freigabe-Workflow erhält Gültigkeit und Status-Regeln
 
-*Für alle* Items SOLL `approveItem` genau dann den Status auf `FREIGEGEBEN` setzen, wenn das Item die Gültigkeitsregeln erfüllt und im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT` ist (andernfalls bleibt der Status erhalten), und *für alle* gültigen Änderungen an einem `FREIGEGEBEN`en Item SOLL der Status danach `ZUR_PRUEFUNG` sein.
+*Für alle* Items SOLL `approveItem` genau dann den Status auf `FREIGEGEBEN` setzen, wenn das Item die Gültigkeitsregeln erfüllt und im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT` ist (andernfalls bleibt der Status erhalten); *für alle* gültigen Änderungen an einer **nicht verwendeten** `FREIGEGEBEN`en Item-Version SOLL deren Status danach `ZUR_PRUEFUNG` sein, und *für alle* gültigen Änderungen an einer **verwendeten** Item-Version SOLL eine neue Item-Version derselben Familie mit der nächsthöheren Versionsnummer im Status `ZUR_PRUEFUNG` entstehen, während Inhalt und Status der verwendeten Version unverändert bleiben.
 
-**Validates: Requirements 3.9, 5.13, 5.14, 5.15, 5.18**
+**Validates: Requirements 3.9, 3.14, 5.13, 5.14, 5.15, 5.18, 5.20, 5.21, 5.23**
 
 ### Property 26: Auswertung und CSV-Export schließen Bewertungen und Kommentare deaktivierter Items aus
 
@@ -519,7 +527,7 @@ Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein d
 ### LLM-Generierung, Verfeinerung und nicht vertrauenswürdige Ausgabe
 
 - Schlägt die Generierung technisch fehl, gelten **alle drei Bedingungen gemeinsam**: Es werden **keine** Items gespeichert, die Wert-Vorgaben bleiben unverändert, **und** es erscheint eine Fehlermeldung mit Hinweis auf den fehlgeschlagenen Vorgang und die Möglichkeit eines erneuten Versuchs (3.12).
-- **Verfeinerung (`refine`)**: Schlägt sie technisch fehl oder liefert eine nicht schemakonforme Ausgabe, wird **keine** Änderung am Item gespeichert, Item und Wert-Vorgaben bleiben unverändert, und die Fehlermeldung weist auf den fehlgeschlagenen Verfeinerungsvorgang und die Möglichkeit eines erneuten Versuchs hin (3.15). Verfeinerung eines Items im Status `FREIGEGEBEN` wird abgelehnt (nur `ZUR_PRUEFUNG`/`DEAKTIVIERT`, 3.13); ein Anweisungstext über 1.000 Zeichen wird als Validierungsfehler abgelehnt.
+- **Verfeinerung (`refine`)**: Schlägt sie technisch fehl oder liefert eine nicht schemakonforme Ausgabe, wird **keine** Änderung am Item gespeichert, Item und Wert-Vorgaben bleiben unverändert, und die Fehlermeldung weist auf den fehlgeschlagenen Verfeinerungsvorgang und die Möglichkeit eines erneuten Versuchs hin (3.16); bei einer verwendeten Version wird keine neue Item-Version angelegt. Die Verfeinerung einer **nicht verwendeten** Version im Status `FREIGEGEBEN` wird abgelehnt (in place nur `ZUR_PRUEFUNG`/`DEAKTIVIERT`, 3.13); bei einer **verwendeten** Version (`FREIGEGEBEN` oder `DEAKTIVIERT`) entsteht stattdessen eine neue Item-Version (3.14). Ein Anweisungstext über 1.000 Zeichen wird als Validierungsfehler abgelehnt.
 - Fehlender Fokussatz blockiert die Generierung mit entsprechender Meldung (3.2).
 - LLM-Ausgaben werden als nicht vertrauenswürdig behandelt und strikt gegen das geteilte Zod-Item-Schema validiert (gültige Perspektive, gültiger Item-Typ, Gewichtungen 0–100 %, mindestens eine Zuordnung > 0 %). Ungültige Ausgaben werden verworfen und führen nicht zu gespeicherten oder geänderten Items (3.4, 3.5, 3.8).
 
@@ -545,20 +553,20 @@ Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein d
 
 ### Kampagnenstatus-Verletzungen
 
-- **Bearbeitung eines eingefrorenen Snapshots**: Änderung an Pool, Zuordnungen oder Gewichtungen einer Kampagne im Status "Aktiv"/"Abgeschlossen" wird abgelehnt, der Snapshot bleibt unverändert, Hinweis auf Unveränderlichkeit (6.12); ausgenommen ist ausschließlich die Deaktivierung.
-- **Abgabe an nicht aktive Kampagne**: Zugang bzw. Antwortübermittlung an eine Kampagne mit Status "Entwurf"/"Abgeschlossen" wird abgelehnt (6.24). Für beide Status zeigt das System denselben einheitlichen Hinweis „Umfrage derzeit nicht verfügbar", ohne den Status zu unterscheiden oder preiszugeben (7.11).
-- **Ungültiger Statuswechsel**: nicht der Sequenz entsprechende Übergänge werden abgelehnt, der bestehende Status bleibt erhalten (6.23).
-- **Nicht freigegebene Items im Pool**: Zuordnung eines Items im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT` zum Kampagnen-Pool wird abgelehnt, der Pool bleibt unverändert, Hinweis „nur freigegebene Items" (6.5). Enthält der Pool bei der Aktivierung (z. B. wegen zwischenzeitlicher Bearbeitung) nicht mehr freigegebene Items, wird die Aktivierung abgelehnt, der Status bleibt „Entwurf" und die betroffenen Items werden benannt (6.9). Die Prüfung erfolgt in derselben Transaktion wie die Snapshot-Erzeugung.
+- **Bearbeitung eines eingefrorenen Snapshots**: Änderung an Pool, Zuordnungen oder Gewichtungen einer Kampagne im Status "Aktiv"/"Abgeschlossen" wird abgelehnt, der Snapshot bleibt unverändert, Hinweis auf Unveränderlichkeit (6.14); ausgenommen ist ausschließlich die Deaktivierung.
+- **Abgabe an nicht aktive Kampagne**: Zugang bzw. Antwortübermittlung an eine Kampagne mit Status "Entwurf"/"Abgeschlossen" wird abgelehnt (6.27). Für beide Status zeigt das System denselben einheitlichen Hinweis „Umfrage derzeit nicht verfügbar", ohne den Status zu unterscheiden oder preiszugeben (7.11).
+- **Ungültiger Statuswechsel**: nicht der Sequenz entsprechende Übergänge werden abgelehnt, der bestehende Status bleibt erhalten (6.26).
+- **Nicht freigegebene Items im Pool**: Zuordnung eines Items im Status `ZUR_PRUEFUNG` oder `DEAKTIVIERT` zum Kampagnen-Pool wird abgelehnt, der Pool bleibt unverändert, Hinweis „nur freigegebene Items" (6.5). Enthält der Pool bei der Aktivierung (z. B. wegen zwischenzeitlicher Bearbeitung) nicht mehr freigegebene Items, wird die Aktivierung abgelehnt, der Status bleibt „Entwurf" und die betroffenen Items werden benannt (6.11). Die Prüfung erfolgt in derselben Transaktion wie die Snapshot-Erzeugung.
 - **Freigabe ungültiger Items**: `approveItem` lehnt ab, der Status bleibt erhalten, die verletzte Regel wird benannt (5.14).
 
 ### Deaktivierung von Items (Randfälle)
 
-- **Kampagne nicht "Aktiv"**: Deaktivierung für "Entwurf"/"Abgeschlossen" wird abgelehnt, Snapshot unverändert, Hinweis „nur für Kampagnen im Status Aktiv" (6.14).
-- **Reaktivierung in derselben Kampagne**: wird abgelehnt (kein Endpunkt/Constraint-Verletzung), Hinweis, dass ein deaktiviertes Item nur in später erstellten Kampagnen erneut verwendet werden kann (6.19). Erneutes Deaktivieren eines bereits deaktivierten SnapshotItems ist idempotent abgewiesen und ändert `deactivatedAt` nicht.
-- **Letztes aktives Item**: Warnung und Ausführung erst nach expliziter Bestätigung (`confirmLastActive`); ohne Bestätigung bleibt der Snapshot unverändert (6.18). Danach gilt für neue Teilnehmer „Umfrage derzeit nicht verfügbar" (7.12).
-- **Verringerte Teilmenge**: `activeCount < itemsPerParticipant` erzeugt keinen Fehler; neue Teilnehmer erhalten alle aktiven Items, der Administrator erhält einen Hinweis auf die verringerte Teilmengengröße (6.17).
-- **Nebenläufigkeit**: Deaktivierung und Antwortübermittlung laufen transaktional; die Übermittlung wertet `deactivatedAt` zum Übermittlungszeitpunkt aus. Eine Antwort, die sich mit einer Deaktivierung überschneidet, wird entweder vollständig mit der Deaktivierung berücksichtigt (Bewertung gespeichert, aber ausgeschlossen, 8.7) oder – wenn alle Items der Teilmenge deaktiviert sind – abgelehnt (8.8). Ist das Quell-Item inzwischen erneut bearbeitet worden, bleibt die Deaktivierung des Snapshots dennoch wirksam (6.13).
-- **Antwort auf deaktiviertes Item nach Abgabe**: Bewertungen und Kommentare bleiben gespeichert (6.16), fließen aber nie in Score, Auswertung oder Export ein, unabhängig vom Abgabezeitpunkt (9.5).
+- **Kampagne nicht "Aktiv"**: Deaktivierung für "Entwurf"/"Abgeschlossen" wird abgelehnt, Snapshot unverändert, Hinweis „nur für Kampagnen im Status Aktiv" (6.16).
+- **Reaktivierung in derselben Kampagne**: wird abgelehnt (kein Endpunkt/Constraint-Verletzung), Hinweis, dass ein deaktiviertes Item nur in später erstellten Kampagnen erneut verwendet werden kann (6.21). Erneutes Deaktivieren eines bereits deaktivierten SnapshotItems ist idempotent abgewiesen und ändert `deactivatedAt` nicht.
+- **Letztes aktives Item**: Warnung und Ausführung erst nach expliziter Bestätigung (`confirmLastActive`); ohne Bestätigung bleibt der Snapshot unverändert (6.20). Danach gilt für neue Teilnehmer „Umfrage derzeit nicht verfügbar" (7.12).
+- **Verringerte Teilmenge**: `activeCount < itemsPerParticipant` erzeugt keinen Fehler; neue Teilnehmer erhalten alle aktiven Items, der Administrator erhält einen Hinweis auf die verringerte Teilmengengröße (6.19).
+- **Nebenläufigkeit**: Deaktivierung und Antwortübermittlung laufen transaktional; die Übermittlung wertet `deactivatedAt` zum Übermittlungszeitpunkt aus. Eine Antwort, die sich mit einer Deaktivierung überschneidet, wird entweder vollständig mit der Deaktivierung berücksichtigt (Bewertung gespeichert, aber ausgeschlossen, 8.7) oder – wenn alle Items der Teilmenge deaktiviert sind – abgelehnt (8.8). Ist das Quell-Item inzwischen erneut bearbeitet worden, bleibt die Deaktivierung des Snapshots dennoch wirksam (6.15).
+- **Antwort auf deaktiviertes Item nach Abgabe**: Bewertungen und Kommentare bleiben gespeichert (6.18), fließen aber nie in Score, Auswertung oder Export ein, unabhängig vom Abgabezeitpunkt (9.5).
 
 ### Export und Teildatenlage
 
@@ -568,7 +576,7 @@ Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein d
 
 ### Transaktionsgrenzen und Idempotenz
 
-- **Snapshot-Erzeugung** bei Aktivierung läuft in einer Transaktion (inkl. erneuter Prüfung des Item-Status): entweder vollständiger, konsistenter Snapshot oder keine Zustandsänderung (6.9, 6.11).
+- **Snapshot-Erzeugung** bei Aktivierung läuft in einer Transaktion (inkl. erneuter Prüfung des Item-Status): entweder vollständiger, konsistenter Snapshot oder keine Zustandsänderung (6.11, 6.13).
 - **Deaktivierung** läuft in einer Transaktion (`deactivatedAt` + Quell-Item-Status).
 - **Antwortübermittlung** läuft transaktional inklusive Dedup-Prüfung (Einmal-Token-Verbrauch bzw. Teilnahmekennung), sodass bei Nebenläufigkeit höchstens eine Participation je Teilnahme entsteht (7.10, 8.10). Die Verhinderung der Mehrfachabgabe greift unabhängig davon, ob die Link-Kennung (Kampagnen-Link bzw. Teilnahmekennung oder Einmal-Link) bei der zweiten Übermittlung gültig oder vorhanden ist, sofern die zweite Übermittlung über denselben Link bzw. dieselbe Teilnahme erkannt wird (8.10).
 - Wiederholtes Konsumieren eines bereits verbrauchten Tokens ist idempotent abgewiesen (keine zusätzliche Wirkung).
@@ -583,6 +591,7 @@ Es wird ein mehrschichtiger, überwiegend automatisierter Testansatz verfolgt, d
 - Fokus auf spezifische Szenarien und Fehlerbedingungen (z. B. leere/zu lange Texte, Gewichtung außerhalb 0–100 %, Bewertung außerhalb 1,00–5,00, ungültige Statusübergänge, "keine Daten"-Fälle, Deaktivierung des letzten aktiven Items, `activeCount < itemsPerParticipant`, Reaktivierungsversuch).
 - **Import/Export**: Beispieltests für Export ohne Werte, ungültiges JSON, Datei über Größenlimit, Top-Level-Schemaverletzung, unbekannter Wertname, doppelte Zuordnung, gemischte Dateien mit Importbericht (Position/Grund/Anzahlen), Konsistenz des exportierten JSON Schemas mit dem Zod-Schema, Unschädlichkeit von Schlüsseln wie `__proto__`.
 - **Freigabe-Workflow**: Beispieltests für Freigabe gültiger/ungültiger Items, Bearbeiten freigegebener Items (→ `ZUR_PRUEFUNG`), Zuordnung nicht freigegebener Items zum Pool, Aktivierung mit nachträglich geändertem Pool-Item.
+- **Versionierung**: Beispieltests für Bearbeiten/Verfeinern nicht verwendeter Versionen (in place) und verwendeter Versionen (neue Version mit nächsthöherer Versionsnummer, Vorgänger unverändert), Ablehnung von In-place-Änderungen und Löschung verwendeter Versionen (Domain-Guard und DB-Trigger), Setzen von `usedAt` bei Aktivierung (nicht bei Entwurfs-Pools), unveränderte Wiederfreigabe deaktivierter verwendeter Versionen, `listFamilyVersions`, `takeOverPool` mit nicht mehr freigegebenen Versionen sowie parallele `createNewVersion`-Aufrufe derselben Familie.
 - **Deaktivierungs-Flows**: Beispieltests für Deaktivierung in Status Aktiv/Entwurf/Abgeschlossen, Setzen von `deactivatedAt` und Quell-Item-Status, Isolation anderer Kampagnen, Warn-/Bestätigungsablauf beim letzten aktiven Item, Hinweis bei verringerter Teilmenge, Ablehnung von Reaktivierung, Wiederverwendung eines überarbeiteten Items nur in später aktivierten Kampagnen.
 
 ### Property-Based Tests (fast-check)
@@ -593,7 +602,7 @@ Es wird ein mehrschichtiger, überwiegend automatisierter Testansatz verfolgt, d
 
 ### Integrationstests (APIs)
 
-- Admin-API und Teilnahme-API werden inklusive **Auth-Guards** getestet (unautorisierter Zugriff wird abgewiesen und umgeleitet; Lockout und Inaktivitäts-Timeout greifen).
+- Admin-API und Teilnahme-API werden inklusive **Auth-Middleware** getestet (unautorisierter Zugriff wird abgewiesen und umgeleitet; Lockout und Inaktivitäts-Timeout greifen).
 - Beide **Verteilmodi** werden abgedeckt: Modus A (öffentlicher Kampagnen-Link, Wiederteilnahme-Erkennung, Rate-Limit-Heuristik) und Modus B (Einmal-Links, Token-Verbrauch, kein Persistieren der E-Mail-Adresse); zusätzlich der Fall „kein aktives Item" (Einmal-Link bleibt unverbraucht).
 - **Item-Export/-Import** Ende-zu-Ende über die Admin-API mit Datei-Upload (Größenlimit, Teilimport, Importbericht, Transaktionsrollback).
 - Transaktionales Verhalten bei Snapshot-Erzeugung, Deaktivierung und Antwortübermittlung wird mit nebenläufigen Zugriffen geprüft (u. a. Deaktivierung parallel zur Übermittlung, Aktivierung parallel zur Bearbeitung eines Pool-Items).
