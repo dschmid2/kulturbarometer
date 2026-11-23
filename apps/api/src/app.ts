@@ -33,8 +33,11 @@ export function createApp(options: AppOptions = {}) {
     try {
       await sql()`select 1`;
       res.json({ ok: true, database: 'ok' });
-    } catch {
-      res.status(503).json({ ok: false, database: 'nicht erreichbar' });
+    } catch (err) {
+      // Nur Fehlercode und Meldung protokollieren; die Verbindungsdaten erscheinen darin nicht.
+      const e = err as { code?: string; message?: string };
+      console.error('Datenbank nicht erreichbar:', e.code, e.message);
+      res.status(503).json({ ok: false, database: 'nicht erreichbar', code: e.code ?? 'UNBEKANNT' });
     }
   });
 
