@@ -36,7 +36,15 @@ export function ItemsPage() {
   return (
     <section>
       <div className="toolbar">
-        <h1>Items</h1>
+        <div>
+          <span className="eyebrow">Umfrage</span>
+          <h1>Items</h1>
+          <p className="muted">
+            Fragen und Situationen aus der Sicht Selbst, Team oder Führung – gewichtet den
+            Unternehmenswerten zugeordnet. Nur freigegebene Items können in Kampagnen verwendet
+            werden.
+          </p>
+        </div>
         <button onClick={() => setEditing('new')} disabled={!values.data?.length}>
           Neues Item
         </button>
@@ -100,7 +108,9 @@ function ItemCard({ item, onEdit }: { item: Item; onEdit: () => void }) {
       <header className="card-header">
         <div className="badges">
           <span className={`badge status-${item.status}`}>{ITEM_STATUS_LABELS[item.status]}</span>
-          <span className="badge">{PERSPECTIVE_LABELS[item.perspective]}</span>
+          <span className={`badge persp-${item.perspective}`}>
+            {PERSPECTIVE_LABELS[item.perspective]}
+          </span>
           <span className="badge">{ITEM_TYPE_LABELS[item.itemType]}</span>
           <span className="badge muted">Version {item.versionNumber}</span>
           {item.used && (
@@ -113,20 +123,22 @@ function ItemCard({ item, onEdit }: { item: Item; onEdit: () => void }) {
           )}
         </div>
         <div className="actions">
-          <button className="secondary" onClick={onEdit}>
+          <button className="secondary small" onClick={onEdit}>
             {item.used ? 'Neue Version' : 'Bearbeiten'}
           </button>
           {item.status !== 'FREIGEGEBEN' && (
-            <button onClick={() => action.mutate('approve')}>Freigeben</button>
+            <button className="small" onClick={() => action.mutate('approve')}>
+              Freigeben
+            </button>
           )}
           {item.status === 'FREIGEGEBEN' && (
-            <button className="secondary" onClick={() => action.mutate('deactivate')}>
+            <button className="secondary small" onClick={() => action.mutate('deactivate')}>
               Deaktivieren
             </button>
           )}
           {!item.used && (
             <button
-              className="danger"
+              className="danger small"
               onClick={() => {
                 if (confirm('Item wirklich löschen?')) action.mutate('delete');
               }}

@@ -14,7 +14,14 @@ export function ValuesPage() {
   return (
     <section>
       <div className="toolbar">
-        <h1>Unternehmenswerte</h1>
+        <div>
+          <span className="eyebrow">Grundlage</span>
+          <h1>Unternehmenswerte</h1>
+          <p className="muted">
+            Name, Beschreibung und Fokussätze beschreiben, wie sich ein gelebter Wert im Daily
+            Business zeigt. Sie sind die Vorgabe für die Umfrage-Items.
+          </p>
+        </div>
         <button onClick={() => setEditing('new')}>Neuer Wert</button>
       </div>
       {editing && (
@@ -122,11 +129,11 @@ function ValueCard({ value, onEdit }: { value: Value; onEdit: () => void }) {
       <header className="card-header">
         <h2>{value.name}</h2>
         <div className="actions">
-          <button className="secondary" onClick={onEdit}>
+          <button className="secondary small" onClick={onEdit}>
             Bearbeiten
           </button>
           <button
-            className="danger"
+            className="danger small"
             onClick={() => {
               if (confirm(`Unternehmenswert „${value.name}" wirklich löschen?`)) remove.mutate();
             }}
