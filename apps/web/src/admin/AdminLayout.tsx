@@ -11,6 +11,7 @@ import { MembersPage } from './MembersPage';
 import { OrganizationsPage } from './OrganizationsPage';
 import type { Me } from './types';
 import { ValuesPage } from './ValuesPage';
+import { UserMenu } from './UserMenu';
 import { useWorkspace, WorkspaceProvider } from './workspace';
 
 export function AdminLayout() {
@@ -57,7 +58,6 @@ function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
 }
 
 function AdminShell() {
-  const { signOut, session } = useAuth();
   const { me, org, selectOrg, hasRole } = useWorkspace();
   const start = hasRole('WERTE')
     ? 'werte'
@@ -83,8 +83,6 @@ function AdminShell() {
           {hasRole('WERTE') && <NavLink to="/admin/werte">Werte</NavLink>}
           {hasRole('WERTE') && <NavLink to="/admin/fragen">Fragen</NavLink>}
           {hasRole('KAMPAGNEN') && <NavLink to="/admin/kampagnen">Kampagnen</NavLink>}
-          {hasRole('ADMIN') && <NavLink to="/admin/benutzer">Benutzer</NavLink>}
-          {me.platformAdmin && <NavLink to="/admin/unternehmungen">Unternehmungen</NavLink>}
         </nav>
         <span className="spacer" />
         {me.organizations.length > 1 ? (
@@ -103,10 +101,7 @@ function AdminShell() {
         ) : (
           org && <span className="org-name">{org.name}</span>
         )}
-        <span className="user">{session?.user.email}</span>
-        <button className="secondary small" onClick={() => void signOut()}>
-          Abmelden
-        </button>
+        <UserMenu />
       </header>
       <main className="page" key={org?.id ?? 'none'}>
         {!org && !me.platformAdmin ? (

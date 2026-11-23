@@ -50,6 +50,7 @@ Der visuelle Auftritt folgt kulturarchitekt.ch (Werte aus dem WordPress-Theme Ne
 - **Schriften:** Space Grotesk für Überschriften und Wortmarke, Inter für Fließtext (Google Fonts)
 - **Formen:** pillenförmige Buttons (Orange mit dunkler Schrift, Hover dunkel), Karten mit 18 px Radius und weichem Schatten, Eyebrow-Labels in Großbuchstaben mit orangem Quadrat, Bildzeichen aus Quadraten und Kreis
 - **Begriffe in der Oberfläche:** Items heißen durchgängig „Fragen", auch wenn sie ein Szenario beschreiben. Die Item-Typen heißen „Aussage" (`FRAGE`) und „Szenario" (`SITUATION`). Spezifikation, Code und Datenbank verwenden weiterhin den Fachbegriff „Item".
+- **Benutzermenü:** Avatar oben rechts mit Untermenü (Benutzer, Unternehmungen – je nach Berechtigung – und Abmelden). Das Profilbild kommt von Gravatar; übertragen wird nur der SHA-256-Hash der E-Mail-Adresse (`d=404`), ohne Gravatar-Bild erscheint der Anfangsbuchstabe. Nur im Administrationsbereich, nie in der Umfrage.
 - **Perspektiven in Auswertungen:** Selbst Orange, Team Dunkelviolett, Führung Grün (`#77B978`)
 
 ## Hosting
