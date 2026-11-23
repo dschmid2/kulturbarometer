@@ -32,6 +32,27 @@ npm test
 npm run typecheck
 ```
 
+Die Integrationstests des Backends (`apps/api/test`) laufen gegen eine echte Postgres-Datenbank, wenn `TEST_DATABASE_URL` gesetzt ist; sie legen dafür jeweils eine eigene Testdatenbank mit allen Migrationen an. Ohne die Variable werden sie übersprungen.
+
+```bash
+TEST_DATABASE_URL=postgres://postgres@localhost:5432/kb_it npm test -w @kb/api
+```
+
+## Administratoren einrichten
+
+Administratoren melden sich über Supabase Auth an. Zusätzlich braucht jedes Konto die Rolle `kb_role = 'admin'` in den App-Metadaten; ohne sie lehnt das Backend jeden Zugriff ab, auch mit gültiger Anmeldung.
+
+1. Supabase-Dashboard → Authentication → Users → „Add user" (E-Mail und Passwort).
+2. Rolle setzen (SQL-Editor im Supabase-Dashboard):
+
+   ```sql
+   update auth.users
+   set raw_app_meta_data = raw_app_meta_data || '{"kb_role": "admin"}'
+   where email = 'admin@example.org';
+   ```
+
+3. Empfohlen: unter Authentication → Sign In / Providers die Selbstregistrierung („Allow new users to sign up") ausschalten.
+
 ## Umgebungsvariablen
 
 | Variable | Verwendung |

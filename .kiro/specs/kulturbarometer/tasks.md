@@ -70,28 +70,28 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
     - _Requirements: 6.17, 8.1_
 
 - [ ] 4. Anmeldung der Administratoren
-  - [ ] 4.1 `AuthGuard`-Middleware: Supabase-Zugriffstoken prüfen, Admin-Routen ohne gültiges Token mit 401 abweisen
+  - [x] 4.1 `AuthGuard`-Middleware: Supabase-Zugriffstoken prüfen, Admin-Routen ohne gültiges Token mit 401 abweisen
     - _Requirements: 1.1, 1.2, 1.4_
-  - [ ] 4.2 Login-Seite und Abmeldung im Frontend mit supabase-js; Weiterleitung auf die Anmeldeseite bei 401
+  - [x] 4.2 Login-Seite und Abmeldung im Frontend mit supabase-js; Weiterleitung auf die Anmeldeseite bei 401
     - _Requirements: 1.1, 1.2, 1.4, 1.5_
   - [ ] 4.3 Ersten Administrator in Supabase Auth anlegen (dokumentierter Schritt im README)
     - _Requirements: 1.1_
 
-- [ ] 5. Unternehmenswerte und Fokussätze
-  - [ ] 5.1 Admin-API: anlegen, bearbeiten, löschen (mit Löschschutz und Rücksetzung betroffener Items), auflisten; Fokussätze hinzufügen, bearbeiten, entfernen
+- [x] 5. Unternehmenswerte und Fokussätze
+  - [x] 5.1 Admin-API: anlegen, bearbeiten, löschen (mit Löschschutz und Rücksetzung betroffener Items), auflisten; Fokussätze hinzufügen, bearbeiten, entfernen
     - _Requirements: 2.1–2.13_
-  - [ ] 5.2 Admin-Oberfläche: Liste mit Leerzustand, Formular mit Fehlermeldungen je Feld, Fokussätze verwalten
+  - [x] 5.2 Admin-Oberfläche: Liste mit Leerzustand, Formular mit Fehlermeldungen je Feld, Fokussätze verwalten
     - _Requirements: 2.1–2.12_
-  - [ ]* 5.3 Tests für Validierung, eindeutige Namen und Löschschutz
+  - [x]* 5.3 Tests für Validierung, eindeutige Namen und Löschschutz
     - _Requirements: 2.2, 2.3, 2.5, 2.9, 2.10, 2.13_
 
-- [ ] 6. Items verwalten
-  - [ ] 6.1 Admin-API: anlegen, bearbeiten (in place bzw. neue Version über `createNewVersion`), löschen, freigeben, deaktivieren, Items je Wert auflisten
+- [x] 6. Items verwalten
+  - [x] 6.1 Admin-API: anlegen, bearbeiten (in place bzw. neue Version über `createNewVersion`), löschen, freigeben, deaktivieren, Items je Wert auflisten
     - Versionsvergabe in einer Transaktion mit Sperre auf `item_family`
     - _Requirements: 5.1–5.23, 5.25–5.28_
-  - [ ] 6.2 Admin-Oberfläche: Item-Liste je Wert mit Status, Formular mit Perspektive, Typ und gewichteten Zuordnungen, Aktionen Freigeben/Deaktivieren/Löschen
+  - [x] 6.2 Admin-Oberfläche: Item-Liste je Wert mit Status, Formular mit Perspektive, Typ und gewichteten Zuordnungen, Aktionen Freigeben/Deaktivieren/Löschen
     - _Requirements: 5.1–5.17, 5.28_
-  - [ ]* 6.3 Tests für Freigabe-Workflow und Versionierung
+  - [x]* 6.3 Tests für Freigabe-Workflow und Versionierung
     - Property 25 sowie Beispieltests „Versionierung“ aus der Teststrategie
     - _Requirements: 5.13–5.15, 5.18–5.23, 5.25–5.27_
 

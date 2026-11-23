@@ -26,6 +26,8 @@ function fromPostgres(err: {
     const match = /^([A-Z_]+): (.*)$/s.exec(err.message);
     if (match) return new AppError(409, match[1]!, match[2]!);
   }
+  if (err.code === '22P02')
+    return new AppError(404, 'NOT_FOUND', 'Der Eintrag wurde nicht gefunden.');
   if (err.code === '23505') return new AppError(409, 'DUPLICATE', 'Der Eintrag existiert bereits.');
   if (err.code === '23503')
     return new AppError(409, 'REFERENCED', 'Der Eintrag wird noch verwendet.');
