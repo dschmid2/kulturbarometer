@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { IconButton } from '../Icons';
 import { ApiError, apiFetch } from '../lib/api';
 import type { Value } from './types';
 
@@ -19,7 +20,7 @@ export function ValuesPage() {
           <h1>Unternehmenswerte</h1>
           <p className="muted">
             Name, Beschreibung und Fokussätze beschreiben, wie sich ein gelebter Wert im Daily
-            Business zeigt. Sie sind die Vorgabe für die Umfrage-Items.
+            Business zeigt. Sie sind die Vorgabe für die Fragen der Umfrage.
           </p>
         </div>
         <button onClick={() => setEditing('new')}>Neuer Wert</button>
@@ -129,17 +130,18 @@ function ValueCard({ value, onEdit }: { value: Value; onEdit: () => void }) {
       <header className="card-header">
         <h2>{value.name}</h2>
         <div className="actions">
-          <button className="secondary small" onClick={onEdit}>
-            Bearbeiten
-          </button>
-          <button
-            className="danger small"
+          <IconButton
+            icon="edit"
+            label={`Unternehmenswert „${value.name}" bearbeiten`}
+            onClick={onEdit}
+          />
+          <IconButton
+            icon="delete"
+            label={`Unternehmenswert „${value.name}" löschen`}
             onClick={() => {
               if (confirm(`Unternehmenswert „${value.name}" wirklich löschen?`)) remove.mutate();
             }}
-          >
-            Löschen
-          </button>
+          />
         </div>
       </header>
       {value.description && <p>{value.description}</p>}
@@ -225,12 +227,14 @@ function FocusSentenceRow({
     <li className="sentence">
       <span>{text}</span>
       <span className="actions">
-        <button className="link" onClick={() => setEditing(true)}>
-          Bearbeiten
-        </button>
-        <button className="link danger" onClick={() => remove.mutate()}>
-          Entfernen
-        </button>
+        <IconButton icon="edit" label="Fokussatz bearbeiten" onClick={() => setEditing(true)} />
+        <IconButton
+          icon="delete"
+          label="Fokussatz löschen"
+          onClick={() => {
+            if (confirm('Fokussatz wirklich löschen?')) remove.mutate();
+          }}
+        />
       </span>
     </li>
   );

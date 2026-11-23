@@ -48,6 +48,7 @@ Der visuelle Auftritt folgt kulturarchitekt.ch (Werte aus dem WordPress-Theme Ne
 - **Farben:** Orange `#FF6A3D` (primärer Akzent, Buttons), Limette `#D4F53C` (sekundärer Akzent, Hover, aktive Navigation, Hervorhebungen), Dunkelviolett `#15142B` (Text, Kopfbereich, dunkle Flächen), Hellgrau `#F2F3F7` (Seitenhintergrund), Weiß (Karten); Zusatzfarben `#77B978` und `#F37262`
 - **Schriften:** Space Grotesk für Überschriften und Wortmarke, Inter für Fließtext (Google Fonts)
 - **Formen:** pillenförmige Buttons (Orange mit dunkler Schrift, Hover dunkel), Karten mit 18 px Radius und weichem Schatten, Eyebrow-Labels in Großbuchstaben mit orangem Quadrat, Bildzeichen aus Quadraten und Kreis
+- **Begriffe in der Oberfläche:** Items heißen durchgängig „Fragen", auch wenn sie ein Szenario beschreiben. Die Item-Typen heißen „Aussage" (`FRAGE`) und „Szenario" (`SITUATION`). Spezifikation, Code und Datenbank verwenden weiterhin den Fachbegriff „Item".
 - **Perspektiven in Auswertungen:** Selbst Orange, Team Dunkelviolett, Führung Grün (`#77B978`)
 
 ## Hosting

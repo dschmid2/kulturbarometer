@@ -11,11 +11,12 @@ import {
 } from '@kb/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { IconButton } from '../Icons';
 import { ApiError, apiFetch } from '../lib/api';
 import type { Item, Value } from './types';
 import { FieldError, firstError } from './ValuesPage';
 
-/** Items verwalten, Freigabe-Workflow und Versionen (Anforderung 5). */
+/** Fragen (fachlich: Items) verwalten, Freigabe-Workflow und Versionen (Anforderung 5). */
 export function ItemsPage() {
   const [valueId, setValueId] = useState('');
   const [status, setStatus] = useState<ItemStatus | ''>('');
@@ -38,15 +39,15 @@ export function ItemsPage() {
       <div className="toolbar">
         <div>
           <span className="eyebrow">Umfrage</span>
-          <h1>Items</h1>
+          <h1>Fragen</h1>
           <p className="muted">
-            Fragen und Situationen aus der Sicht Selbst, Team oder Führung – gewichtet den
-            Unternehmenswerten zugeordnet. Nur freigegebene Items können in Kampagnen verwendet
+            Aussagen und Szenarien aus der Sicht Selbst, Team oder Führung – gewichtet den
+            Unternehmenswerten zugeordnet. Nur freigegebene Fragen können in Kampagnen verwendet
             werden.
           </p>
         </div>
         <button onClick={() => setEditing('new')} disabled={!values.data?.length}>
-          Neues Item
+          Neue Frage
         </button>
       </div>
       {values.data?.length === 0 && <p className="empty">Legen Sie zuerst Unternehmenswerte an.</p>}
@@ -82,7 +83,7 @@ export function ItemsPage() {
         />
       )}
       {items.isLoading && <p className="muted">Laden …</p>}
-      {items.data?.length === 0 && <p className="empty">Keine Items gefunden.</p>}
+      {items.data?.length === 0 && <p className="empty">Keine Fragen gefunden.</p>}
       <div className="cards">
         {items.data?.map((item) => (
           <ItemCard key={item.id} item={item} onEdit={() => setEditing(item)} />
@@ -123,9 +124,6 @@ function ItemCard({ item, onEdit }: { item: Item; onEdit: () => void }) {
           )}
         </div>
         <div className="actions">
-          <button className="secondary small" onClick={onEdit}>
-            {item.used ? 'Neue Version' : 'Bearbeiten'}
-          </button>
           {item.status !== 'FREIGEGEBEN' && (
             <button className="small" onClick={() => action.mutate('approve')}>
               Freigeben
@@ -136,15 +134,19 @@ function ItemCard({ item, onEdit }: { item: Item; onEdit: () => void }) {
               Deaktivieren
             </button>
           )}
+          <IconButton
+            icon="edit"
+            label={item.used ? 'Neue Version anlegen' : 'Frage bearbeiten'}
+            onClick={onEdit}
+          />
           {!item.used && (
-            <button
-              className="danger small"
+            <IconButton
+              icon="delete"
+              label="Frage löschen"
               onClick={() => {
-                if (confirm('Item wirklich löschen?')) action.mutate('delete');
+                if (confirm('Frage wirklich löschen?')) action.mutate('delete');
               }}
-            >
-              Löschen
-            </button>
+            />
           )}
         </div>
       </header>
@@ -219,15 +221,15 @@ function ItemForm({
 
   return (
     <form className="form panel" onSubmit={submit}>
-      <h2>{item ? (item.used ? 'Neue Version anlegen' : 'Item bearbeiten') : 'Neues Item'}</h2>
+      <h2>{item ? (item.used ? 'Neue Version anlegen' : 'Frage bearbeiten') : 'Neue Frage'}</h2>
       {item?.used && (
         <p className="info">
-          Diese Version wurde in einer Kampagne verwendet und ist unveränderlich. Beim Speichern
-          entsteht eine neue Version im Status „zur Prüfung".
+          Diese Version der Frage wurde in einer Kampagne verwendet und ist unveränderlich. Beim
+          Speichern entsteht eine neue Version im Status „zur Prüfung".
         </p>
       )}
       <label>
-        Text (1–500 Zeichen)
+        Fragetext (1–500 Zeichen)
         <textarea value={text} onChange={(e) => setText(e.target.value)} maxLength={500} rows={3} />
         <FieldError errors={err?.fieldErrors.text} />
       </label>
@@ -247,7 +249,7 @@ function ItemForm({
           <span className="hint">Die Formulierung sollte die Perspektive ausdrücken.</span>
         </label>
         <label>
-          Item-Typ
+          Art
           <select value={itemType} onChange={(e) => setItemType(e.target.value as ItemType)}>
             {ITEM_TYPES.map((t) => (
               <option key={t} value={t}>
@@ -278,13 +280,11 @@ function ItemForm({
               aria-label="Gewichtung in Prozent"
             />
             <span>%</span>
-            <button
-              type="button"
-              className="link danger"
+            <IconButton
+              icon="delete"
+              label="Zuordnung entfernen"
               onClick={() => setAssignments((l) => l.filter((_, idx) => idx !== i))}
-            >
-              Entfernen
-            </button>
+            />
           </div>
         ))}
         <button

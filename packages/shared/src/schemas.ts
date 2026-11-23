@@ -49,17 +49,17 @@ export const weightSchema = z
 
 const itemTextSchema = nonBlank(
   500,
-  'Der Item-Text muss 1 bis 500 Zeichen lang sein.',
-  'Der Item-Text muss 1 bis 500 Zeichen lang sein.',
+  'Der Fragetext muss 1 bis 500 Zeichen lang sein.',
+  'Der Fragetext muss 1 bis 500 Zeichen lang sein.',
 );
-const itemTypeSchema = z.enum(ITEM_TYPES, 'Bitte einen gültigen Item-Typ wählen.');
+const itemTypeSchema = z.enum(ITEM_TYPES, 'Bitte eine gültige Art wählen (Aussage oder Szenario).');
 const perspectiveSchema = z.enum(
   PERSPECTIVES,
   'Bitte genau eine Perspektive (Selbst, Team oder Führung) wählen.',
 );
 
 const MIN_ONE_POSITIVE =
-  'Das Item muss mindestens einem Unternehmenswert mit einer Gewichtung größer als 0 % zugeordnet sein.';
+  'Die Frage muss mindestens einem Unternehmenswert mit einer Gewichtung größer als 0 % zugeordnet sein.';
 
 /** Item mit Werte-Zuordnungen per ID (Admin-Oberfläche). */
 export const itemInputSchema = z
@@ -145,8 +145,8 @@ export type CampaignInput = z.infer<typeof campaignInputSchema>;
 
 export const itemsPerParticipantSchema = z
   .number()
-  .int('Die Item-Anzahl je Teilnehmer muss eine ganze Zahl sein.')
-  .min(1, 'Die Item-Anzahl je Teilnehmer muss mindestens 1 sein.');
+  .int('Die Anzahl Fragen je Teilnehmer muss eine ganze Zahl sein.')
+  .min(1, 'Die Anzahl Fragen je Teilnehmer muss mindestens 1 sein.');
 
 export const anonymityThresholdSchema = z
   .number()

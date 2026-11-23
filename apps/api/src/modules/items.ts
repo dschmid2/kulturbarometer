@@ -80,7 +80,7 @@ async function loadItems(sql: Sql | Tx, ids: readonly string[] | null): Promise<
 
 export async function getItem(sql: Sql | Tx, id: string): Promise<ItemDto> {
   const [item] = await loadItems(sql, [id]);
-  if (!item) throw notFound('Das Item');
+  if (!item) throw notFound('Die Frage');
   return item;
 }
 
@@ -164,7 +164,7 @@ export async function createNewVersionInTx(
   await assertValuesExist(tx, input);
   const [pred] = await tx<{ familyId: string; origin: ItemOrigin }[]>`
     select family_id as "familyId", origin from item where id = ${predecessorId}`;
-  if (!pred) throw notFound('Das Item');
+  if (!pred) throw notFound('Die Frage');
   await tx`select id from item_family where id = ${pred.familyId} for update`;
   const [maxRow] = await tx<{ next: number }[]>`
     select coalesce(max(version_number), 0) + 1 as next from item where family_id = ${pred.familyId}`;
@@ -191,7 +191,7 @@ export async function updateItem(
   const result = await sql.begin(async (tx) => {
     const [current] = await tx<{ usedAt: Date | null }[]>`
       select used_at as "usedAt" from item where id = ${id} for update`;
-    if (!current) throw notFound('Das Item');
+    if (!current) throw notFound('Die Frage');
     if (current.usedAt !== null) {
       return { id: await createNewVersionInTx(tx, id, input), newVersion: true };
     }
@@ -215,7 +215,7 @@ export async function updateItem(
 export async function approveItem(sql: Sql, id: string): Promise<ItemDto> {
   const item = await getItem(sql, id);
   if (item.status === 'FREIGEGEBEN') {
-    throw new AppError(409, 'ALREADY_APPROVED', 'Das Item ist bereits freigegeben.');
+    throw new AppError(409, 'ALREADY_APPROVED', 'Die Frage ist bereits freigegeben.');
   }
   const check = itemInputSchema.safeParse({
     text: item.text,
@@ -225,7 +225,7 @@ export async function approveItem(sql: Sql, id: string): Promise<ItemDto> {
   });
   if (!check.success) {
     const message =
-      check.error.issues[0]?.message ?? 'Das Item erfüllt die Gültigkeitsregeln nicht.';
+      check.error.issues[0]?.message ?? 'Die Frage erfüllt die Gültigkeitsregeln nicht.';
     throw new AppError(422, 'RULE_VIOLATED', `Freigabe nicht möglich: ${message}`);
   }
   await sql`update item set status = 'FREIGEGEBEN' where id = ${id}`;
@@ -236,7 +236,7 @@ export async function approveItem(sql: Sql, id: string): Promise<ItemDto> {
 export async function deactivateItem(sql: Sql, id: string): Promise<ItemDto> {
   const item = await getItem(sql, id);
   if (item.status !== 'FREIGEGEBEN') {
-    throw new AppError(409, 'NOT_APPROVED', 'Nur freigegebene Items können deaktiviert werden.');
+    throw new AppError(409, 'NOT_APPROVED', 'Nur freigegebene Fragen können deaktiviert werden.');
   }
   await sql.begin(async (tx) => {
     await tx`update item set status = 'DEAKTIVIERT' where id = ${id}`;
@@ -252,12 +252,12 @@ export async function deleteItem(sql: Sql, id: string): Promise<void> {
   await sql.begin(async (tx) => {
     const [item] = await tx<{ usedAt: Date | null; familyId: string }[]>`
       select used_at as "usedAt", family_id as "familyId" from item where id = ${id} for update`;
-    if (!item) throw notFound('Das Item');
+    if (!item) throw notFound('Die Frage');
     if (item.usedAt !== null) {
       throw new AppError(
         409,
         'USED_ITEM_NOT_DELETABLE',
-        'Die Item-Version wurde in einer Kampagne verwendet und kann nicht gelöscht werden.',
+        'Diese Version der Frage wurde in einer Kampagne verwendet und kann nicht gelöscht werden.',
       );
     }
     await tx`delete from item where id = ${id}`;
