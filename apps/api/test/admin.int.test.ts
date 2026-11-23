@@ -4,7 +4,19 @@ import { createApp } from '../src/app.js';
 import type { Sql } from '../src/db/client.js';
 import { createTestDb, TEST_DATABASE_URL, truncateAll } from './db.js';
 
-const AUTH = { Authorization: 'Bearer admin-token' };
+// Benutzer der Tests (IDs fest, damit Mitgliedschaften zugeordnet werden können)
+const USERS = {
+  owner: { userId: '00000000-0000-4000-8000-00000000a001', email: 'owner@example.org' },
+  werte: { userId: '00000000-0000-4000-8000-00000000a002', email: 'werte@example.org' },
+  kampagnen: { userId: '00000000-0000-4000-8000-00000000a003', email: 'kampagnen@example.org' },
+  admin: { userId: '00000000-0000-4000-8000-00000000a004', email: 'admin@example.org' },
+  outsider: { userId: '00000000-0000-4000-8000-00000000a005', email: 'outsider@example.org' },
+  platform: { userId: '00000000-0000-4000-8000-00000000a006', email: 'platform@example.org' },
+} as const;
+type UserKey = keyof typeof USERS;
+const ORG_A = '00000000-0000-4000-8000-0000000000aa';
+const ORG_B = '00000000-0000-4000-8000-0000000000bb';
+const AUTH = { Authorization: 'Bearer owner', 'X-Organization-Id': ORG_A };
 
 describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
   let sql: Sql;
@@ -14,8 +26,21 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
     sql = await createTestDb();
     app = createApp({
       sql: () => sql,
-      verifyAdmin: async (token) =>
-        token === 'admin-token' ? { userId: 'u1', email: 'a@example.org' } : null,
+      verifyToken: async (token) => {
+        const user = USERS[token as UserKey];
+        return user ? { ...user, platformAdmin: token === 'platform' } : null;
+      },
+      userDirectory: {
+        async findByEmail(email) {
+          const user = Object.values(USERS).find((u) => u.email === email.toLowerCase());
+          return user ? { id: user.userId, email: user.email } : null;
+        },
+        async invite(email) {
+          return email.endsWith('@invite.test')
+            ? { id: '00000000-0000-4000-8000-00000000a0ff', email }
+            : null;
+        },
+      },
     });
   });
   afterAll(async () => {
@@ -23,6 +48,18 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
   });
   beforeEach(async () => {
     await truncateAll(sql);
+    await sql`insert into organization (id, name) values (${ORG_A}, 'Alpha AG'), (${ORG_B}, 'Beta AG')`;
+    const members: [string, UserKey, string[]][] = [
+      [ORG_A, 'owner', ['ADMIN', 'WERTE', 'KAMPAGNEN']],
+      [ORG_A, 'werte', ['WERTE']],
+      [ORG_A, 'kampagnen', ['KAMPAGNEN']],
+      [ORG_A, 'admin', ['ADMIN']],
+      [ORG_B, 'owner', ['WERTE']],
+    ];
+    for (const [org, key, roles] of members) {
+      await sql`insert into organization_member (organization_id, user_id, email, roles)
+                values (${org}, ${USERS[key].userId}, ${USERS[key].email}, ${roles})`;
+    }
   });
 
   const api = () => ({
@@ -35,6 +72,22 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
     put: (url: string, body: object) => request(app).put(url).set(AUTH).send(body),
     del: (url: string) => request(app).delete(url).set(AUTH),
   });
+
+  /** Anfrage als bestimmter Benutzer in einer bestimmten Unternehmung. */
+  const as = (user: UserKey, org: string | null = ORG_A) => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${user}` };
+    if (org) headers['X-Organization-Id'] = org;
+    return {
+      get: (url: string) => request(app).get(url).set(headers),
+      post: (url: string, body?: object) =>
+        request(app)
+          .post(url)
+          .set(headers)
+          .send(body ?? {}),
+      put: (url: string, body: object) => request(app).put(url).set(headers).send(body),
+      del: (url: string) => request(app).delete(url).set(headers),
+    };
+  };
 
   async function value(name: string) {
     const res = await api().post('/api/admin/values', { name, description: '' });
@@ -69,9 +122,143 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
       const res = await request(app).get('/api/admin/values').set('Authorization', 'Bearer falsch');
       expect(res.status).toBe(401);
     });
-    it('liefert die Identität mit gültigem Token', async () => {
+    it('liefert die Identität mit Unternehmungen und Rollen', async () => {
       const res = await api().get('/api/admin/me');
-      expect(res.body).toEqual({ userId: 'u1', email: 'a@example.org' });
+      expect(res.body).toEqual({
+        userId: USERS.owner.userId,
+        email: USERS.owner.email,
+        platformAdmin: false,
+        organizations: [
+          { id: ORG_A, name: 'Alpha AG', roles: ['ADMIN', 'WERTE', 'KAMPAGNEN'] },
+          { id: ORG_B, name: 'Beta AG', roles: ['WERTE'] },
+        ],
+      });
+    });
+  });
+
+  describe('Unternehmungen und Rollen (Anforderung 12)', () => {
+    it('verlangt eine Unternehmung und eine Mitgliedschaft', async () => {
+      expect((await as('owner', null).get('/api/admin/values')).body.code).toBe(
+        'ORGANIZATION_REQUIRED',
+      );
+      expect((await as('outsider').get('/api/admin/values')).status).toBe(403);
+    });
+
+    it('trennt die Daten der Unternehmungen', async () => {
+      await value('Vertrauen');
+      expect((await as('owner', ORG_B).get('/api/admin/values')).body).toEqual([]);
+      // Gleicher Name in anderer Unternehmung ist erlaubt
+      expect(
+        (await as('owner', ORG_B).post('/api/admin/values', { name: 'Vertrauen', description: '' }))
+          .status,
+      ).toBe(201);
+      const idA = (await api().get('/api/admin/values')).body[0].id;
+      expect(
+        (await as('owner', ORG_B).put(`/api/admin/values/${idA}`, { name: 'X', description: '' }))
+          .status,
+      ).toBe(404);
+      // Frage in B mit Wert aus A ist nicht möglich
+      const res = await as('owner', ORG_B).post('/api/admin/items', {
+        text: 'Fremde Zuordnung',
+        itemType: 'FRAGE',
+        perspective: 'SELBST',
+        assignments: [{ valueId: idA, weight: 50 }],
+      });
+      expect(res.status).toBe(422);
+      expect(res.body.code).toBe('UNKNOWN_VALUE');
+    });
+
+    it('setzt die Rollen durch', async () => {
+      const v = await value('Vertrauen');
+      // Werte-Administration darf Werte ändern, aber keine Benutzer verwalten
+      expect(
+        (await as('werte').post('/api/admin/values', { name: 'Mut', description: '' })).status,
+      ).toBe(201);
+      expect((await as('werte').get('/api/admin/members')).status).toBe(403);
+      // Kampagnen-Administration darf Werte und Fragen lesen, aber nicht ändern
+      expect((await as('kampagnen').get('/api/admin/values')).status).toBe(200);
+      expect((await as('kampagnen').get('/api/admin/items')).status).toBe(200);
+      const denied = await as('kampagnen').put(`/api/admin/values/${v}`, {
+        name: 'X',
+        description: '',
+      });
+      expect(denied.status).toBe(403);
+      expect(denied.body.message).toContain('Werte-Administration');
+      // Benutzer-Administration allein sieht keine Werte
+      expect((await as('admin').get('/api/admin/values')).status).toBe(403);
+      expect((await as('admin').get('/api/admin/members')).status).toBe(200);
+    });
+
+    it('verwaltet Benutzer der Unternehmung', async () => {
+      const add = await as('admin').post('/api/admin/members', {
+        email: 'Outsider@example.org',
+        roles: ['WERTE'],
+      });
+      expect(add.status).toBe(201);
+      expect(add.body).toMatchObject({
+        userId: USERS.outsider.userId,
+        roles: ['WERTE'],
+        invited: false,
+      });
+      expect((await as('outsider').get('/api/admin/values')).status).toBe(200);
+
+      const dup = await as('admin').post('/api/admin/members', {
+        email: 'outsider@example.org',
+        roles: ['WERTE'],
+      });
+      expect(dup.body.code).toBe('ALREADY_MEMBER');
+      const unknown = await as('admin').post('/api/admin/members', {
+        email: 'neu@example.org',
+        roles: ['WERTE'],
+      });
+      expect(unknown.body.code).toBe('USER_NOT_FOUND');
+      const invited = await as('admin').post('/api/admin/members', {
+        email: 'neu@invite.test',
+        roles: ['KAMPAGNEN'],
+      });
+      expect(invited.body).toMatchObject({ invited: true, roles: ['KAMPAGNEN'] });
+
+      const upd = await as('admin').put(`/api/admin/members/${USERS.outsider.userId}`, {
+        roles: ['WERTE', 'KAMPAGNEN'],
+      });
+      expect(upd.body.roles).toEqual(['WERTE', 'KAMPAGNEN']);
+      expect((await as('admin').del(`/api/admin/members/${USERS.outsider.userId}`)).status).toBe(
+        204,
+      );
+      expect((await as('outsider').get('/api/admin/values')).status).toBe(403);
+    });
+
+    it('lässt die letzte Benutzer-Administration nicht entfernen', async () => {
+      await as('admin').put(`/api/admin/members/${USERS.owner.userId}`, { roles: ['WERTE'] });
+      const res = await as('admin').put(`/api/admin/members/${USERS.admin.userId}`, {
+        roles: ['WERTE'],
+      });
+      expect(res.body.code).toBe('LAST_ADMIN');
+      expect((await as('admin').del(`/api/admin/members/${USERS.admin.userId}`)).body.code).toBe(
+        'LAST_ADMIN',
+      );
+    });
+
+    it('erlaubt Unternehmungen nur Plattform-Administratoren', async () => {
+      expect((await as('owner', null).get('/api/admin/organizations')).status).toBe(403);
+      const created = await as('platform', null).post('/api/admin/organizations', {
+        name: 'Gamma GmbH',
+      });
+      expect(created.status).toBe(201);
+      expect(
+        (await as('platform', null).post('/api/admin/organizations', { name: 'Gamma GmbH' })).body
+          .code,
+      ).toBe('DUPLICATE_NAME');
+      const renamed = await as('platform', null).put(
+        `/api/admin/organizations/${created.body.id}`,
+        { name: 'Gamma AG' },
+      );
+      expect(renamed.body.name).toBe('Gamma AG');
+      // Plattform-Admins haben in jeder Unternehmung alle Rollen, auch ohne Mitgliedschaft
+      const me = await as('platform', null).get('/api/admin/me');
+      expect(me.body.platformAdmin).toBe(true);
+      expect(me.body.organizations).toHaveLength(3);
+      expect((await as('platform', created.body.id).get('/api/admin/values')).status).toBe(200);
     });
   });
 

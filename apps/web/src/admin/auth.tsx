@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUnauthenticatedHandler(() => {
       sessionStorage.setItem(
         'kb-login-notice',
-        'Ihre Sitzung ist abgelaufen oder Ihr Konto hat keinen Administrator-Zugriff. Bitte melden Sie sich erneut an.',
+        'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.',
       );
       void supabase?.auth.signOut();
     });

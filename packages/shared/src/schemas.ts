@@ -6,6 +6,7 @@ import {
   PERSPECTIVES,
   RATING_MAX,
   RATING_MIN,
+  ROLES,
 } from './domain.js';
 
 /** Text, der nicht leer und nicht nur aus Leerzeichen bestehen darf. */
@@ -184,3 +185,29 @@ export const answerSubmissionSchema = z.object({
   ),
 });
 export type AnswerSubmission = z.infer<typeof answerSubmissionSchema>;
+
+// ---------------------------------------------------------------------------
+// Unternehmungen und Benutzer (Anforderung 12)
+// ---------------------------------------------------------------------------
+
+export const organizationInputSchema = z.object({
+  name: nonBlank(
+    200,
+    'Bitte einen Namen für die Unternehmung angeben.',
+    'Der Name darf höchstens 200 Zeichen lang sein.',
+  ),
+});
+export type OrganizationInput = z.infer<typeof organizationInputSchema>;
+
+const rolesSchema = z
+  .array(z.enum(ROLES, 'Ungültige Rolle.'))
+  .min(1, 'Bitte mindestens eine Rolle wählen.')
+  .refine((r) => new Set(r).size === r.length, 'Jede Rolle darf nur einmal vorkommen.');
+
+export const memberInputSchema = z.object({
+  email: z.email('Bitte eine gültige E-Mail-Adresse angeben.'),
+  roles: rolesSchema,
+});
+export type MemberInput = z.infer<typeof memberInputSchema>;
+
+export const memberRolesSchema = z.object({ roles: rolesSchema });

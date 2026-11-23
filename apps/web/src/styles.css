@@ -719,3 +719,70 @@ input[type='checkbox'] {
     top: 104px;
   }
 }
+
+/* Unternehmung im Kopfbereich */
+.org-select {
+  width: auto;
+  max-width: 220px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  background: transparent;
+  color: var(--ka-white);
+  font-weight: 600;
+}
+.org-select option {
+  color: var(--ka-ink);
+}
+.org-name {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  color: var(--ka-lime);
+}
+
+/* Rollen */
+.role-legend {
+  list-style: none;
+  padding: 14px 18px;
+  margin: 0 0 20px;
+  background: var(--ka-white);
+  border-radius: var(--radius-card);
+  font-size: 0.9rem;
+  display: grid;
+  gap: 4px;
+}
+.role-checks {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+/* Kopfbereich bei vielen Menüpunkten kompakter */
+.admin-header {
+  gap: 24px;
+}
+.admin-header nav {
+  gap: 20px;
+}
+@media (max-width: 1360px) {
+  .admin-header .user {
+    display: none;
+  }
+}
+@media (max-width: 1100px) {
+  .admin-header {
+    flex-wrap: wrap;
+    gap: 12px 20px;
+  }
+  .admin-header nav {
+    order: 3;
+    width: 100%;
+    overflow-x: auto;
+  }
+}
+.form label.check,
+label.check {
+  flex-direction: row;
+  align-items: center;
+}

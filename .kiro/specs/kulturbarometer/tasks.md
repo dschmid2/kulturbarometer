@@ -165,6 +165,18 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
   - [ ] 13.4 Durchgängiger Test des Kernablaufs auf der Vercel-Umgebung (von Werten bis Auswertung)
     - _Requirements: 2, 5, 6, 7, 8, 10_
 
+- [x] 14. Unternehmungen, Benutzer und Rollen
+  - [x] 14.1 Migration: Tabellen `organization` und `organization_member` (Rollen `ADMIN`, `WERTE`, `KAMPAGNEN`), `organization_id` an Werten, Items und Kampagnen, Werte-Namen eindeutig je Unternehmung, Trigger gegen Zuordnungen über Unternehmungsgrenzen; bestehende Daten einer Standard-Unternehmung zugeordnet
+    - _Requirements: 2.3, 12.1, 12.2, 12.5_
+  - [x] 14.2 Backend: `AuthGuard` für alle gültigen Konten, `orgContext` (Header `X-Organization-Id`), `requireRole`, `requirePlatformAdmin`; alle Abfragen nach Unternehmung gefiltert
+    - _Requirements: 1.4, 12.1, 12.9, 12.10_
+  - [x] 14.3 Backend: `/me`, Unternehmungen (Plattform-Administratoren), Benutzer der Unternehmung inkl. Einladung per E-Mail und Schutz der letzten Benutzer-Administration
+    - _Requirements: 12.3–12.8, 12.11_
+  - [x] 14.4 Frontend: Auswahl der aktiven Unternehmung, Navigation nach Rollen, Seiten „Benutzer" und „Unternehmungen", Hinweis ohne Zuordnung
+    - _Requirements: 12.9, 12.11, 12.12_
+  - [x]* 14.5 Integrationstests für Trennung der Unternehmungen, Rollen und Benutzerverwaltung (Properties 33 und 34)
+    - _Requirements: 12.1–12.10_
+
 ## Nach dem Prototyp
 
 Diese Anforderungen sind im Design beschrieben, aber nicht Teil des ersten Prototyps:
