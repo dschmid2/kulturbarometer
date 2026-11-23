@@ -519,4 +519,131 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
       ).toBe(404);
     });
   });
+
+  describe('Kampagnen (Anforderung 6)', () => {
+    async function approvedItem(valueId: string, perspective = 'SELBST') {
+      const i = await item(valueId, { perspective });
+      await api().post(`/api/admin/items/${i.id}/approve`);
+      return i.id;
+    }
+    async function campaign() {
+      const res = await api().post('/api/admin/campaigns', {
+        title: 'Herbst 2026',
+        startDate: '2026-12-01',
+        endDate: '2026-12-20',
+      });
+      expect(res.status).toBe(201);
+      return res.body as { id: string; status: string; anonymityThreshold: number };
+    }
+    const settings = (n: number | null, threshold = 5) => ({
+      title: 'Herbst 2026',
+      startDate: '2026-12-01',
+      endDate: '2026-12-20',
+      itemsPerParticipant: n,
+      anonymityThreshold: threshold,
+    });
+
+    it('legt Kampagnen als Entwurf mit Vorgabe-Schwelle 5 an (6.1, 6.28)', async () => {
+      const c = await campaign();
+      expect(c).toMatchObject({ status: 'ENTWURF', anonymityThreshold: 5 });
+      const bad = await api().post('/api/admin/campaigns', {
+        title: 'X',
+        startDate: '2026-12-20',
+        endDate: '2026-12-01',
+      });
+      expect(bad.status).toBe(422);
+      expect(bad.body.fieldErrors.endDate).toBeDefined();
+    });
+
+    it('nimmt nur freigegebene Fragen in den Pool und leitet die Werte ab (6.4, 6.5)', async () => {
+      const v = await value('Vertrauen');
+      const ok = await approvedItem(v);
+      const draft = (await item(v)).id;
+      const c = await campaign();
+      const rejected = await api().put(`/api/admin/campaigns/${c.id}/pool`, {
+        itemIds: [ok, draft],
+      });
+      expect(rejected.body.code).toBe('ITEM_NOT_APPROVED');
+      expect((await api().get(`/api/admin/campaigns/${c.id}`)).body.items).toHaveLength(0);
+      const res = await api().put(`/api/admin/campaigns/${c.id}/pool`, { itemIds: [ok] });
+      expect(res.body.poolSize).toBe(1);
+      expect(res.body.values).toEqual([{ id: v, name: 'Vertrauen' }]);
+    });
+
+    it('aktiviert nur mit gültigen Einstellungen und friert den Snapshot ein (6.9–6.13)', async () => {
+      const v = await value('Vertrauen');
+      const a = await approvedItem(v);
+      const b = await approvedItem(v, 'TEAM');
+      const c = await campaign();
+      expect((await api().post(`/api/admin/campaigns/${c.id}/activate`)).body.code).toBe(
+        'EMPTY_POOL',
+      );
+      await api().put(`/api/admin/campaigns/${c.id}/pool`, { itemIds: [a, b] });
+      expect((await api().post(`/api/admin/campaigns/${c.id}/activate`)).body.code).toBe(
+        'INVALID_ITEMS_PER_PARTICIPANT',
+      );
+      await api().put(`/api/admin/campaigns/${c.id}`, settings(3));
+      expect((await api().post(`/api/admin/campaigns/${c.id}/activate`)).body.code).toBe(
+        'INVALID_ITEMS_PER_PARTICIPANT',
+      );
+      await api().put(`/api/admin/campaigns/${c.id}`, settings(2, 7));
+      // Eine Pool-Frage wird vor der Aktivierung bearbeitet und ist damit nicht mehr freigegeben
+      await api().put(`/api/admin/items/${b}`, {
+        text: 'Geändert',
+        itemType: 'FRAGE',
+        perspective: 'TEAM',
+        assignments: [{ valueId: v, weight: 100 }],
+      });
+      expect((await api().get(`/api/admin/campaigns/${c.id}`)).body.poolSize).toBe(1);
+      await api().put(`/api/admin/campaigns/${c.id}`, settings(1, 7));
+
+      const act = await api().post(`/api/admin/campaigns/${c.id}/activate`);
+      expect(act.status).toBe(200);
+      expect(act.body).toMatchObject({ status: 'AKTIV', poolSize: 1, anonymityThreshold: 7 });
+      expect(act.body.items[0]).toMatchObject({ itemVersionId: a, deactivatedAt: null });
+      expect(act.body.items[0].assignments).toEqual([
+        { valueId: v, valueName: 'Vertrauen', weight: 80 },
+      ]);
+      expect((await api().get(`/api/admin/items/${a}`)).body.used).toBe(true);
+
+      // Danach unveränderlich (6.14, 6.30)
+      expect((await api().put(`/api/admin/campaigns/${c.id}`, settings(1, 9))).body.code).toBe(
+        'SNAPSHOT_IMMUTABLE',
+      );
+      expect(
+        (await api().put(`/api/admin/campaigns/${c.id}/pool`, { itemIds: [] })).body.code,
+      ).toBe('SNAPSHOT_IMMUTABLE');
+      // Änderungen an der Quelle lassen den Snapshot unberührt (5.31)
+      await api().put(`/api/admin/values/${v}`, { name: 'Verlässlichkeit', description: '' });
+      const after = await api().get(`/api/admin/campaigns/${c.id}`);
+      expect(after.body.items[0].assignments[0].valueName).toBe('Vertrauen');
+    });
+
+    it('schliesst nur aktive Kampagnen ab und löscht nur Entwürfe (6.25, 6.26)', async () => {
+      const v = await value('Vertrauen');
+      const a = await approvedItem(v);
+      const c = await campaign();
+      expect((await api().post(`/api/admin/campaigns/${c.id}/close`)).body.code).toBe(
+        'INVALID_STATUS_TRANSITION',
+      );
+      await api().put(`/api/admin/campaigns/${c.id}/pool`, { itemIds: [a] });
+      await api().put(`/api/admin/campaigns/${c.id}`, settings(1));
+      await api().post(`/api/admin/campaigns/${c.id}/activate`);
+      expect((await api().del(`/api/admin/campaigns/${c.id}`)).body.code).toBe(
+        'SNAPSHOT_IMMUTABLE',
+      );
+      expect((await api().post(`/api/admin/campaigns/${c.id}/close`)).body.status).toBe(
+        'ABGESCHLOSSEN',
+      );
+      const draft = await campaign();
+      expect((await api().del(`/api/admin/campaigns/${draft.id}`)).status).toBe(204);
+    });
+
+    it('verlangt die Rolle Kampagnen-Administration und trennt Unternehmungen', async () => {
+      const c = await campaign();
+      expect((await as('werte').get('/api/admin/campaigns')).status).toBe(403);
+      expect((await as('kampagnen').get('/api/admin/campaigns')).body).toHaveLength(1);
+      expect((await as('owner', ORG_B).get(`/api/admin/campaigns/${c.id}`)).status).toBe(403);
+    });
+  });
 });

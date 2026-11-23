@@ -211,3 +211,27 @@ export const memberInputSchema = z.object({
 export type MemberInput = z.infer<typeof memberInputSchema>;
 
 export const memberRolesSchema = z.object({ roles: rolesSchema });
+
+/** Einstellungen einer Kampagne im Entwurf (6.1–6.3, 6.6, 6.28). */
+export const campaignSettingsSchema = z
+  .object({
+    title: nonBlank(
+      200,
+      'Der Titel muss 1 bis 200 Zeichen lang sein.',
+      'Der Titel muss 1 bis 200 Zeichen lang sein.',
+    ),
+    startDate: z.iso.date('Bitte ein gültiges Datum angeben.'),
+    endDate: z.iso.date('Bitte ein gültiges Datum angeben.'),
+    itemsPerParticipant: itemsPerParticipantSchema.nullable(),
+    anonymityThreshold: anonymityThresholdSchema,
+  })
+  .refine((c) => c.endDate > c.startDate, {
+    path: ['endDate'],
+    message: 'Das Enddatum muss nach dem Startdatum liegen.',
+  });
+export type CampaignSettings = z.infer<typeof campaignSettingsSchema>;
+
+/** Kampagnen-Pool als vollständige Liste der Fragen (6.4). */
+export const campaignPoolSchema = z.object({
+  itemIds: z.array(z.uuid('Ungültige Frage.')).max(2000, 'Höchstens 2.000 Fragen pro Kampagne.'),
+});

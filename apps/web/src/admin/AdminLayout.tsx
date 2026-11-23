@@ -5,6 +5,8 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { Wordmark } from '../BrandMark';
 import { apiFetch } from '../lib/api';
 import { AuthProvider, useAuth } from './auth';
+import { CampaignDetailPage } from './CampaignDetailPage';
+import { CampaignsPage } from './CampaignsPage';
 import { ItemsPage } from './ItemsPage';
 import { LoginPage } from './LoginPage';
 import { MembersPage } from './MembersPage';
@@ -154,7 +156,15 @@ function AdminShell() {
               path="kampagnen"
               element={
                 <Guard roles={['KAMPAGNEN']}>
-                  <p className="empty">Die Kampagnen folgen im nächsten Schritt.</p>
+                  <CampaignsPage />
+                </Guard>
+              }
+            />
+            <Route
+              path="kampagnen/:id"
+              element={
+                <Guard roles={['KAMPAGNEN']}>
+                  <CampaignDetailPage />
                 </Guard>
               }
             />
