@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { BrandMark, Wordmark } from '../BrandMark';
 import { supabase } from '../lib/supabase';
 
 export function LoginPage() {
@@ -14,6 +15,7 @@ export function LoginPage() {
   if (!supabase) {
     return (
       <main className="page narrow">
+        <BrandMark size={40} />
         <h1>Kulturbarometer</h1>
         <p className="error">
           Die Anmeldung ist nicht konfiguriert (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY
@@ -34,39 +36,62 @@ export function LoginPage() {
   };
 
   return (
-    <main className="page narrow">
-      <h1>Kulturbarometer</h1>
-      <p className="muted">Anmeldung für Administratoren</p>
-      <form className="form" onSubmit={submit}>
-        <label>
-          E-Mail
-          <input
-            type="email"
-            autoComplete="username"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-          />
-        </label>
-        <label>
-          Passwort
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-        </label>
-        {error && (
-          <p className="error" role="alert">
-            {error}
+    <div className="login">
+      <section className="login-hero">
+        <Wordmark />
+        <div>
+          <span className="eyebrow">Unternehmenskultur messen</span>
+          <h1>
+            Wie <em>gelebt</em> sind eure Werte?
+          </h1>
+          <p>
+            Das Kulturbarometer zeigt, wie Unternehmenswerte im Daily Business wirken – aus Sicht
+            jeder einzelnen Person, des Teams und der Führung.
           </p>
-        )}
-        <button type="submit" disabled={busy}>
-          {busy ? 'Anmelden …' : 'Anmelden'}
-        </button>
-      </form>
-    </main>
+        </div>
+        <svg className="login-shapes" viewBox="0 0 27 27" aria-hidden="true">
+          <rect width="12" height="12" fill="#FF6A3D" />
+          <circle cx="21" cy="6" r="6" fill="#D4F53C" />
+          <rect y="15" width="12" height="12" fill="#fff" fillOpacity=".12" />
+          <rect x="15" y="15" width="12" height="12" fill="#FF6A3D" fillOpacity=".55" />
+        </svg>
+      </section>
+      <main className="login-form">
+        <form className="form card" onSubmit={submit}>
+          <div>
+            <span className="eyebrow">Administration</span>
+            <h2>Anmelden</h2>
+          </div>
+          <label>
+            E-Mail
+            <input
+              type="email"
+              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Passwort
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+          </label>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <button type="submit" disabled={busy}>
+            {busy ? 'Anmelden …' : 'Anmelden'}
+          </button>
+        </form>
+      </main>
+    </div>
   );
 }

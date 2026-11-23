@@ -41,6 +41,15 @@ npm-Workspaces in einem Repository:
 - `packages/shared` – gemeinsame Typen, Zod-Schemata und reine Fachlogik (z. B. Ist-Score, Verteilung)
 - `supabase/migrations` – Datenbankschema
 
+## Gestaltung
+
+Der visuelle Auftritt folgt kulturarchitekt.ch (Werte aus dem WordPress-Theme Neve, Palette „Base", und dem Zusatz-CSS der Website). Alle Werte stehen als CSS-Variablen in `apps/web/src/styles.css`.
+
+- **Farben:** Orange `#FF6A3D` (primärer Akzent, Buttons), Limette `#D4F53C` (sekundärer Akzent, Hover, aktive Navigation, Hervorhebungen), Dunkelviolett `#15142B` (Text, Kopfbereich, dunkle Flächen), Hellgrau `#F2F3F7` (Seitenhintergrund), Weiß (Karten); Zusatzfarben `#77B978` und `#F37262`
+- **Schriften:** Space Grotesk für Überschriften und Wortmarke, Inter für Fließtext (Google Fonts)
+- **Formen:** pillenförmige Buttons (Orange mit dunkler Schrift, Hover dunkel), Karten mit 18 px Radius und weichem Schatten, Eyebrow-Labels in Großbuchstaben mit orangem Quadrat, Bildzeichen aus Quadraten und Kreis
+- **Perspektiven in Auswertungen:** Selbst Orange, Team Dunkelviolett, Führung Grün (`#77B978`)
+
 ## Hosting
 
 - **Vercel:** ein Projekt; das Frontend als statischer Build, das Express-Backend als Vercel Function unter `/api`.

@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { Wordmark } from '../BrandMark';
 import { apiFetch } from '../lib/api';
 import { AuthProvider, useAuth } from './auth';
 import { ItemsPage } from './ItemsPage';
@@ -30,15 +31,21 @@ function AdminShell() {
   return (
     <div className="admin">
       <header className="admin-header">
-        <strong>Kulturbarometer</strong>
+        <NavLink
+          to="/admin"
+          className="wordmark"
+          aria-label="Kulturbarometer – Startseite der Administration"
+        >
+          <Wordmark />
+        </NavLink>
         <nav>
           <NavLink to="/admin/werte">Werte</NavLink>
           <NavLink to="/admin/items">Items</NavLink>
           <NavLink to="/admin/kampagnen">Kampagnen</NavLink>
         </nav>
         <span className="spacer" />
-        <span className="muted small">{session?.user.email}</span>
-        <button className="secondary" onClick={() => void signOut()}>
+        <span className="user">{session?.user.email}</span>
+        <button className="secondary small" onClick={() => void signOut()}>
           Abmelden
         </button>
       </header>
