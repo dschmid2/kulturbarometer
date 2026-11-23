@@ -289,6 +289,42 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
       expect((await api().get(`/api/admin/items?valueId=${b}`)).body).toHaveLength(1);
     });
 
+    it('gibt mehrere Fragen gesammelt frei und meldet übersprungene mit Grund (5.13, 5.14)', async () => {
+      const v = await value('Vertrauen');
+      const a = await item(v);
+      const b = await item(v, { perspective: 'TEAM' });
+      const already = await item(v, { perspective: 'FUEHRUNG' });
+      await api().post(`/api/admin/items/${already.id}/approve`);
+      // Ungültig machen: einzige Zuordnung auf 0 % setzen (direkt in der Datenbank)
+      const invalid = await item(v, { text: 'Ungültige Frage' });
+      await sql`update value_assignment set weight = 0 where item_id = ${invalid.id}`;
+      const unknown = '00000000-0000-4000-8000-000000000999';
+
+      const res = await api().post('/api/admin/items/bulk-approve', {
+        ids: [a.id, b.id, already.id, invalid.id, unknown, a.id],
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.approved.sort()).toEqual([a.id, b.id].sort());
+      const reasons = Object.fromEntries(
+        res.body.skipped.map((s: { id: string; reason: string }) => [s.id, s.reason]),
+      );
+      expect(reasons[already.id]).toContain('bereits freigegeben');
+      expect(reasons[invalid.id]).toContain('größer als 0 %');
+      expect(reasons[unknown]).toContain('nicht gefunden');
+      const statuses = await sql<{ id: string; status: string }[]>`
+        select id, status from item where id = any(${[a.id, b.id, invalid.id]}::uuid[])`;
+      expect(Object.fromEntries(statuses.map((r) => [r.id, r.status]))).toEqual({
+        [a.id]: 'FREIGEGEBEN',
+        [b.id]: 'FREIGEGEBEN',
+        [invalid.id]: 'ZUR_PRUEFUNG',
+      });
+    });
+
+    it('lehnt eine leere Auswahl ab', async () => {
+      const res = await api().post('/api/admin/items/bulk-approve', { ids: [] });
+      expect(res.status).toBe(422);
+    });
+
     it('liefert 404 für unbekannte oder ungültige IDs', async () => {
       expect((await api().get('/api/admin/items/keine-uuid')).status).toBe(404);
       expect(

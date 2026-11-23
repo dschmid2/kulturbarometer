@@ -9,6 +9,7 @@ import {
   type Perspective,
 } from '@kb/shared';
 import { Router } from 'express';
+import { z } from 'zod';
 import type { Sql, Tx } from '../db/client.js';
 import { AppError, notFound } from '../http/errors.js';
 
@@ -212,24 +213,74 @@ export async function updateItem(
 }
 
 /** Freigabe (5.13, 5.14, 5.25): nur aus „zur Prüfung" oder „deaktiviert", Regeln erneut prüfen. */
-export async function approveItem(sql: Sql, id: string): Promise<ItemDto> {
-  const item = await getItem(sql, id);
-  if (item.status === 'FREIGEGEBEN') {
-    throw new AppError(409, 'ALREADY_APPROVED', 'Die Frage ist bereits freigegeben.');
-  }
+/** Liefert die verletzte Gültigkeitsregel (5.1–5.9) oder `null`, wenn die Frage freigegeben werden darf. */
+function approvalViolation(item: ItemDto): string | null {
   const check = itemInputSchema.safeParse({
     text: item.text,
     itemType: item.itemType,
     perspective: item.perspective,
     assignments: item.assignments.map((a) => ({ valueId: a.valueId, weight: a.weight })),
   });
-  if (!check.success) {
-    const message =
-      check.error.issues[0]?.message ?? 'Die Frage erfüllt die Gültigkeitsregeln nicht.';
-    throw new AppError(422, 'RULE_VIOLATED', `Freigabe nicht möglich: ${message}`);
+  if (check.success) return null;
+  return check.error.issues[0]?.message ?? 'Die Frage erfüllt die Gültigkeitsregeln nicht.';
+}
+
+export async function approveItem(sql: Sql, id: string): Promise<ItemDto> {
+  const item = await getItem(sql, id);
+  if (item.status === 'FREIGEGEBEN') {
+    throw new AppError(409, 'ALREADY_APPROVED', 'Die Frage ist bereits freigegeben.');
+  }
+  const violation = approvalViolation(item);
+  if (violation) {
+    throw new AppError(422, 'RULE_VIOLATED', `Freigabe nicht möglich: ${violation}`);
   }
   await sql`update item set status = 'FREIGEGEBEN' where id = ${id}`;
   return getItem(sql, id);
+}
+
+export const bulkApproveSchema = z.object({
+  ids: z
+    .array(z.uuid('Ungültige Frage.'))
+    .min(1, 'Bitte mindestens eine Frage auswählen.')
+    .max(1000, 'Es können höchstens 1.000 Fragen auf einmal freigegeben werden.'),
+});
+
+export interface BulkApproveResult {
+  approved: string[];
+  skipped: { id: string; reason: string }[];
+}
+
+/**
+ * Sammelfreigabe: wendet auf jede Frage dieselben Regeln an wie die Einzelfreigabe (5.13, 5.14).
+ * Gültige Fragen werden in einer Transaktion freigegeben; bereits freigegebene, unbekannte oder
+ * ungültige Fragen werden mit Grund übersprungen.
+ */
+export async function bulkApproveItems(sql: Sql, body: unknown): Promise<BulkApproveResult> {
+  const { ids } = bulkApproveSchema.parse(body);
+  const unique = [...new Set(ids)];
+  return sql.begin(async (tx) => {
+    // Sperre verhindert, dass parallel bearbeitete Fragen ungeprüft freigegeben werden.
+    await tx`select id from item where id = any(${unique}::uuid[]) for update`;
+    const items = await loadItems(tx, unique);
+    const byId = new Map(items.map((i) => [i.id, i]));
+    const approved: string[] = [];
+    const skipped: BulkApproveResult['skipped'] = [];
+    for (const id of unique) {
+      const item = byId.get(id);
+      if (!item) skipped.push({ id, reason: 'Die Frage wurde nicht gefunden.' });
+      else if (item.status === 'FREIGEGEBEN')
+        skipped.push({ id, reason: 'Die Frage ist bereits freigegeben.' });
+      else {
+        const violation = approvalViolation(item);
+        if (violation) skipped.push({ id, reason: violation });
+        else approved.push(id);
+      }
+    }
+    if (approved.length > 0) {
+      await tx`update item set status = 'FREIGEGEBEN' where id = any(${approved}::uuid[])`;
+    }
+    return { approved, skipped };
+  });
 }
 
 /** Deaktivieren außerhalb einer laufenden Kampagne (5.16): nur der Status ändert sich. */
@@ -301,6 +352,9 @@ export function itemsRouter(sql: () => Sql): Router {
   r.delete('/items/:id', async (req, res) => {
     await deleteItem(sql(), req.params.id);
     res.status(204).end();
+  });
+  r.post('/items/bulk-approve', async (req, res) => {
+    res.json(await bulkApproveItems(sql(), req.body));
   });
   r.post('/items/:id/approve', async (req, res) => {
     res.json(await approveItem(sql(), req.params.id));

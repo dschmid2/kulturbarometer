@@ -10,7 +10,7 @@ import {
   type Perspective,
 } from '@kb/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { IconButton } from '../Icons';
 import { ApiError, apiFetch } from '../lib/api';
 import type { Item, Value } from './types';
@@ -20,7 +20,10 @@ import { FieldError, firstError } from './ValuesPage';
 export function ItemsPage() {
   const [valueId, setValueId] = useState('');
   const [status, setStatus] = useState<ItemStatus | ''>('');
+  const [perspective, setPerspective] = useState<Perspective | ''>('');
+  const [itemType, setItemType] = useState<ItemType | ''>('');
   const [editing, setEditing] = useState<Item | 'new' | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const values = useQuery({
     queryKey: ['values'],
     queryFn: () => apiFetch<Value[]>('/admin/values'),
@@ -33,6 +36,24 @@ export function ItemsPage() {
     queryKey: ['items', valueId, status],
     queryFn: () => apiFetch<Item[]>(`/admin/items?${params}`),
   });
+  // Perspektive und Art werden im Browser gefiltert; Wert und Status serverseitig.
+  const shown = useMemo(
+    () =>
+      (items.data ?? []).filter(
+        (i) =>
+          (!perspective || i.perspective === perspective) && (!itemType || i.itemType === itemType),
+      ),
+    [items.data, perspective, itemType],
+  );
+  // Bei geänderten Filtern beginnt die Auswahl neu, damit nichts Unsichtbares freigegeben wird.
+  useEffect(() => setSelected(new Set()), [valueId, status, perspective, itemType]);
+  const toggle = (id: string) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   return (
     <section>
@@ -64,6 +85,31 @@ export function ItemsPage() {
           </select>
         </label>
         <label>
+          Perspektive
+          <select
+            value={perspective}
+            onChange={(e) => setPerspective(e.target.value as Perspective | '')}
+          >
+            <option value="">Alle</option>
+            {PERSPECTIVES.map((p) => (
+              <option key={p} value={p}>
+                {PERSPECTIVE_LABELS[p]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Art
+          <select value={itemType} onChange={(e) => setItemType(e.target.value as ItemType | '')}>
+            <option value="">Alle</option>
+            {ITEM_TYPES.map((t) => (
+              <option key={t} value={t}>
+                {ITEM_TYPE_LABELS[t]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           Status
           <select value={status} onChange={(e) => setStatus(e.target.value as ItemStatus | '')}>
             <option value="">Alle</option>
@@ -75,6 +121,9 @@ export function ItemsPage() {
           </select>
         </label>
       </div>
+      {items.data && items.data.length > 0 && (
+        <BulkApproveBar shown={shown} selected={selected} setSelected={setSelected} />
+      )}
       {editing && values.data && (
         <ItemForm
           item={editing === 'new' ? null : editing}
@@ -83,17 +132,127 @@ export function ItemsPage() {
         />
       )}
       {items.isLoading && <p className="muted">Laden …</p>}
-      {items.data?.length === 0 && <p className="empty">Keine Fragen gefunden.</p>}
+      {items.data && shown.length === 0 && <p className="empty">Keine Fragen gefunden.</p>}
       <div className="cards">
-        {items.data?.map((item) => (
-          <ItemCard key={item.id} item={item} onEdit={() => setEditing(item)} />
+        {shown.map((item) => (
+          <ItemCard
+            key={item.id}
+            item={item}
+            onEdit={() => setEditing(item)}
+            selected={selected.has(item.id)}
+            onToggle={() => toggle(item.id)}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function ItemCard({ item, onEdit }: { item: Item; onEdit: () => void }) {
+interface BulkResult {
+  approved: string[];
+  skipped: { id: string; reason: string }[];
+}
+
+/** Sammelfreigabe: Auswahl der angezeigten, noch nicht freigegebenen Fragen (5.13, 5.14). */
+function BulkApproveBar({
+  shown,
+  selected,
+  setSelected,
+}: {
+  shown: Item[];
+  selected: Set<string>;
+  setSelected: (s: Set<string>) => void;
+}) {
+  const qc = useQueryClient();
+  const [result, setResult] = useState<BulkResult | null>(null);
+  const selectable = shown.filter((i) => i.status !== 'FREIGEGEBEN');
+  const allSelected = selectable.length > 0 && selectable.every((i) => selected.has(i.id));
+  const approve = useMutation({
+    mutationFn: () =>
+      apiFetch<BulkResult>('/admin/items/bulk-approve', {
+        method: 'POST',
+        body: { ids: [...selected] },
+      }),
+    onSuccess: (r) => {
+      setResult(r);
+      setSelected(new Set());
+      void qc.invalidateQueries({ queryKey: ['items'] });
+    },
+  });
+  const textOf = (id: string) => shown.find((i) => i.id === id)?.text ?? id;
+
+  return (
+    <div className="bulk-bar">
+      <div className="bulk-row">
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            disabled={selectable.length === 0}
+            onChange={() =>
+              setSelected(allSelected ? new Set() : new Set(selectable.map((i) => i.id)))
+            }
+          />
+          Alle angezeigten auswählen
+        </label>
+        <span className="muted small">
+          {shown.length} {shown.length === 1 ? 'Frage' : 'Fragen'} angezeigt, davon{' '}
+          {selectable.length} noch nicht freigegeben · {selected.size} ausgewählt
+        </span>
+        <span className="spacer" />
+        <button
+          disabled={selected.size === 0 || approve.isPending}
+          onClick={() => {
+            if (
+              confirm(
+                `${selected.size} ${selected.size === 1 ? 'Frage' : 'Fragen'} freigeben? Freigegebene Fragen können in Kampagnen verwendet werden.`,
+              )
+            ) {
+              setResult(null);
+              approve.mutate();
+            }
+          }}
+        >
+          {approve.isPending ? 'Freigeben …' : `Auswahl freigeben (${selected.size})`}
+        </button>
+      </div>
+      {approve.error && <p className="error">{firstError(approve.error)}</p>}
+      {result && (
+        <div className="info" role="status">
+          <strong>
+            {result.approved.length} {result.approved.length === 1 ? 'Frage' : 'Fragen'}{' '}
+            freigegeben.
+          </strong>
+          {result.skipped.length > 0 && (
+            <>
+              {' '}
+              {result.skipped.length} übersprungen:
+              <ul>
+                {result.skipped.map((s) => (
+                  <li key={s.id}>
+                    „{textOf(s.id)}“ – {s.reason}
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ItemCard({
+  item,
+  onEdit,
+  selected,
+  onToggle,
+}: {
+  item: Item;
+  onEdit: () => void;
+  selected: boolean;
+  onToggle: () => void;
+}) {
   const qc = useQueryClient();
   const refresh = () => qc.invalidateQueries({ queryKey: ['items'] });
   const action = useMutation({
@@ -105,9 +264,18 @@ function ItemCard({ item, onEdit }: { item: Item; onEdit: () => void }) {
   });
 
   return (
-    <article className="card">
+    <article className={`card ${selected ? 'card-selected' : ''}`}>
       <header className="card-header">
         <div className="badges">
+          {item.status !== 'FREIGEGEBEN' && (
+            <input
+              type="checkbox"
+              className="card-check"
+              checked={selected}
+              onChange={onToggle}
+              aria-label={`Frage für Sammelfreigabe auswählen: ${item.text}`}
+            />
+          )}
           <span className={`badge status-${item.status}`}>{ITEM_STATUS_LABELS[item.status]}</span>
           <span className={`badge persp-${item.perspective}`}>
             {PERSPECTIVE_LABELS[item.perspective]}
