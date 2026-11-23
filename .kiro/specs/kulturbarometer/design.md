@@ -7,7 +7,7 @@ Das Kulturbarometer ist eine Webapplikation, die den gelebten Ist-Zustand der Un
 - **Administrationsbereich** (authentifiziert): Verwaltung von Unternehmenswerten, Fokussätzen, KI-gestützter Item-Generierung und -Verfeinerung, Item-Export/-Import, Items samt Freigabe-Workflow, Kampagnen, Verteilung, Auswertung und Export.
 - **Teilnahmebereich** (anonym): Beantwortung der Umfrage einer aktiven Kampagne über einen öffentlichen Kampagnen-Link oder einen individuellen Einmal-Link.
 
-Das zentrale fachliche Alleinstellungsmerkmal ist die **dreifache Perspektive** (Selbst, Team, Führung): Jedes Item trägt genau eine in seiner Formulierung ausgedrückte Perspektive, und der gewichtete **Ist-Score** wird je Unternehmenswert **und** je Perspektive getrennt berechnet. Hinzu kommen zwei Wege der Item-Entstehung (**KI-gestützte Generierung/Verfeinerung** über einen API-Zugang oder **JSON-Export/-Import** für externe Erstellung), ein **Item-Statusmodell** (zur Prüfung → freigegeben → deaktiviert), zwei **anonymitätswahrende Verteilmodi**, eine **zufällige Teilnehmer-Teilmenge** je Teilnehmer und ein **Kampagnen-Snapshot**, der reproduzierbare Berechnungen über die Zeit erlaubt. Der Snapshot ist nach Aktivierung unveränderlich; einzige Ausnahme ist die **Deaktivierung einzelner Items** während einer laufenden Kampagne, um missverstandene Items aus der Wertung zu nehmen. Damit Kampagnen auf derselben Fragenbasis vergleichbar bleiben, werden Items **versioniert**: Sobald eine Item-Version in einer aktivierten Kampagne verwendet wurde, ist sie unveränderlich; jede Änderung (manuell oder KI-gestützt) erzeugt eine neue Item-Version im Status `ZUR_PRUEFUNG`, die vorherige Version bleibt unverändert. Der Kampagnen-Pool einer früheren Kampagne lässt sich mit denselben Item-Versionen in eine neue Kampagne übernehmen. Eine Kampagne besteht aus einem Set von Fragen und Situationen/Use-Cases; ihre Unternehmenswerte werden nicht separat gepflegt, sondern aus den Werte-Zuordnungen dieser Items abgeleitet. Ausgewertet werden laufende Kampagnen (vorläufige, stufenweise aktualisierte **Zwischenauswertung**) und abgeschlossene Kampagnen (**Endauswertung**); beide zeigen Ergebnisse erst ab einer je Kampagne festgelegten **Anonymitätsschwelle**. Ausgewertet wird auf Ebene der **Unternehmenswerte im Kontext der drei Perspektiven**, nicht auf Ebene einzelner Items: neben dem Mittelwert (Ist-Score) die **Verteilung** der Teilnehmer-Scores (Klassen, Median, Standardabweichung) und die **Perspektivdifferenzen**.
+Das zentrale fachliche Alleinstellungsmerkmal ist die **dreifache Perspektive** (Selbst, Team, Führung): Jedes Item trägt genau eine in seiner Formulierung ausgedrückte Perspektive, und der gewichtete **Ist-Score** wird je Unternehmenswert **und** je Perspektive getrennt berechnet. Hinzu kommen zwei Wege der Item-Entstehung (**KI-gestützte Generierung/Verfeinerung** über einen API-Zugang oder **JSON-Export/-Import** für externe Erstellung), ein **Item-Statusmodell** (zur Prüfung → freigegeben → deaktiviert), zwei **anonymitätswahrende Verteilmodi**, eine **zufällige Teilnehmer-Teilmenge** je Teilnehmer und ein **Kampagnen-Snapshot**, der reproduzierbare Berechnungen über die Zeit erlaubt. Der Snapshot ist nach Aktivierung unveränderlich; einzige Ausnahme ist die **Deaktivierung einzelner Items** während einer laufenden Kampagne, um missverstandene Items aus der Wertung zu nehmen. Damit Kampagnen auf derselben Fragenbasis vergleichbar bleiben, werden Items **versioniert**: Sobald eine Item-Version in einer aktivierten Kampagne verwendet wurde, ist sie unveränderlich; jede Änderung (manuell oder KI-gestützt) erzeugt eine neue Item-Version im Status `ZUR_PRUEFUNG`, die vorherige Version bleibt unverändert. Der Kampagnen-Pool einer früheren Kampagne lässt sich mit denselben Item-Versionen in eine neue Kampagne übernehmen. Eine Kampagne besteht aus einem Set von Fragen und Situationen/Use-Cases; ihre Unternehmenswerte werden nicht separat gepflegt, sondern aus den Werte-Zuordnungen dieser Items abgeleitet. Das System ist **mandantenfähig**: Werte, Items und Kampagnen gehören einer **Unternehmung**; Benutzer erhalten je Unternehmung die Rollen Benutzer-, Werte- und/oder Kampagnen-Administration (Anforderung 12). Ausgewertet werden laufende Kampagnen (vorläufige, stufenweise aktualisierte **Zwischenauswertung**) und abgeschlossene Kampagnen (**Endauswertung**); beide zeigen Ergebnisse erst ab einer je Kampagne festgelegten **Anonymitätsschwelle**. Ausgewertet wird auf Ebene der **Unternehmenswerte im Kontext der drei Perspektiven**, nicht auf Ebene einzelner Items: neben dem Mittelwert (Ist-Score) die **Verteilung** der Teilnehmer-Scores (Klassen, Median, Standardabweichung) und die **Perspektivdifferenzen**.
 
 Dieses Dokument beschreibt die Architektur, den Technologie-Stack, das Datenmodell, die Komponenten, die zentralen Abläufe, die Korrektheitseigenschaften (für Property-Based Testing), die Fehlerbehandlung sowie ein Sicherheits- und Datenschutzkonzept, das die Anonymität der Teilnehmer in den Mittelpunkt stellt.
 
@@ -117,14 +117,24 @@ Regeln:
 
 Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Validierungsregeln und Anwendungsfälle.
 
-### AuthModule (Anforderung 1)
+### AuthModule (Anforderung 1 und 12)
 
-- Verantwortlich für Anmeldung, Abmeldung, Session-Erzeugung/-Invalidierung, Lockout und Inaktivitäts-Timeout.
-- Schlüsselschnittstellen:
-  - `login(credentials) -> Session | AuthError` – erstellt Session bei gültigen Daten (1.1), lehnt generisch ab (1.2), berücksichtigt Lockout (1.3).
-  - `logout(sessionId) -> void` – beendet Session sofort und invalidiert Token (1.5).
-  - `AuthGuard` (Express-Middleware) – schützt alle Admin-Routen (1.4) und erzwingt Inaktivitäts-Timeout von 30 Minuten (1.6).
-  - `LoginAttemptPolicy` – zählt fehlgeschlagene Versuche je Benutzer in einem 15-Minuten-Fenster; sperrt nach 5 Fehlversuchen für mindestens 15 Minuten (1.3).
+- **Anmeldung über Supabase Auth** (E-Mail und Passwort). Das Frontend meldet sich mit supabase-js an und sendet das Zugriffstoken als `Authorization: Bearer …`. Abmeldung beendet die Sitzung in Supabase (1.5).
+- `AuthGuard` (Express-Middleware) – prüft Signatur und Ablauf des Tokens (`getClaims`) und weist Admin-Routen ohne gültiges Token mit 401 ab (1.4). Ergebnis ist die Identität `{ userId, email, platformAdmin }`; `platformAdmin` stammt aus `app_metadata.kb_role = 'admin'`, das nur serverseitig gesetzt werden kann.
+- `orgContext` – liest die **aktive Unternehmung** aus dem Header `X-Organization-Id`, lädt die Mitgliedschaft des Benutzers und legt `{ id, name, roles }` an die Anfrage. Ohne Header 400, ohne Mitgliedschaft (und ohne Plattform-Admin-Recht) 403 (12.1, 12.9). Plattform-Administratoren erhalten in jeder Unternehmung alle Rollen.
+- `requireRole(...roles)` – verlangt mindestens eine der Rollen in der aktiven Unternehmung, sonst 403 mit Nennung der fehlenden Rolle (12.9). `requirePlatformAdmin` schützt die Verwaltung der Unternehmungen (12.4).
+- **Rechte je Bereich** (12.10): Werte, Fokussätze und Items ändern → `WERTE`; Werte und Items lesen → `WERTE` oder `KAMPAGNEN`; Kampagnen und Auswertungen → `KAMPAGNEN`; Benutzer der Unternehmung → `ADMIN`; Unternehmungen → Plattform-Administrator.
+- Sperre nach Fehlversuchen (1.3) und Inaktivitäts-Timeout (1.6) folgen nach dem Prototyp: Supabase Auth begrenzt Anmeldeversuche bereits; der 30-Minuten-Timeout wird im Backend über den Zeitpunkt der letzten Aktivität ergänzt.
+
+### OrganizationModule – Unternehmungen, Benutzer und Rollen (Anforderung 12)
+
+- `getMe(user)` – Identität mit allen Unternehmungen und Rollen; Plattform-Administratoren sehen alle Unternehmungen mit allen Rollen. Grundlage für Navigation und Auswahl der aktiven Unternehmung im Frontend (12.11, 12.12).
+- `listOrganizations`, `createOrganization`, `renameOrganization` – nur Plattform-Administratoren; Name 1–200 Zeichen, eindeutig (12.3, 12.4).
+- `listMembers`, `addMember(email, roles)`, `updateMemberRoles`, `removeMember` – Rolle `ADMIN` in der aktiven Unternehmung (12.6–12.8).
+  - `addMember` sucht das Konto per E-Mail im `UserDirectory`. Existiert keines, lädt es über die Supabase-Admin-API ein, sofern `SUPABASE_SECRET_KEY` gesetzt ist; sonst Fehler `USER_NOT_FOUND` mit Hinweis (12.7).
+  - Änderungen und Entfernen werden abgelehnt (`LAST_ADMIN`), wenn danach niemand mehr die Rolle `ADMIN` hätte (12.8).
+- `UserDirectory` (Port): `findByEmail` liest `auth.users` über die direkte Datenbankverbindung; `invite` nutzt die Supabase-Admin-API. In Tests durch eine Attrappe ersetzt.
+- **Trennung der Unternehmungen**: Jede Abfrage der Fachmodule filtert nach `organization_id` der aktiven Unternehmung; Zugriffe auf IDs einer anderen Unternehmung liefern 404. Zusätzlich verhindern Datenbank-Trigger Werte-Zuordnungen und Pool-Einträge über Unternehmungsgrenzen (12.1, 12.2).
 
 ### ValuesModule – Unternehmenswerte & Fokussätze (Anforderung 2)
 
@@ -292,7 +302,10 @@ Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Va
 
 ```mermaid
 erDiagram
-    ADMIN_USER ||--o{ SESSION : hat
+    ORGANIZATION ||--o{ ORGANIZATION_MEMBER : "Benutzer mit Rollen"
+    ORGANIZATION ||--o{ VALUE : besitzt
+    ORGANIZATION ||--o{ ITEM : besitzt
+    ORGANIZATION ||--o{ CAMPAIGN : besitzt
     VALUE ||--o{ FOCUS_SENTENCE : besitzt
     VALUE ||--o{ VALUE_ASSIGNMENT : "wird zugeordnet durch"
     ITEM ||--o{ VALUE_ASSIGNMENT : hat
@@ -320,14 +333,16 @@ Jede Zeile der Tabelle `Item` ist eine **Item-Version**; zusammengehörige Versi
 
 ### Entitäten
 
-**AdminUser**
-- `id`, `username`, `passwordHash` (Argon2id), `failedAttempts`, `lockoutUntil`.
+**Benutzerkonten** werden von Supabase Auth geführt (`auth.users`); die Applikation speichert keine Passwörter.
 
-**Session**
-- `id`, `adminUserId`, `createdAt`, `lastActivityAt`, `expiresAt`. Inaktivitäts-Timeout wird über `lastActivityAt` erzwungen (1.6); Logout löscht die Session (1.5).
+**Organization (Unternehmung)**
+- `id`, `name` (1–200, eindeutig), `createdAt`, `updatedAt` (12.3).
+
+**OrganizationMember (Mitgliedschaft)**
+- `organizationId`, `userId` (Konto in Supabase Auth), `email` (nur zur Anzeige in der Verwaltung), `roles` (nicht leere Teilmenge von {`ADMIN`, `WERTE`, `KAMPAGNEN`}), `createdAt`; Primärschlüssel `(organizationId, userId)` (12.5). Ohne Bezug zu Umfrage-Antworten (12.13).
 
 **Value (Unternehmenswert)**
-- `id`, `name` (1–100, eindeutig), `description` (0–1.000), `createdAt`, `updatedAt`.
+- `id`, `organizationId`, `name` (1–100, eindeutig je Unternehmung, 2.3), `description` (0–1.000), `createdAt`, `updatedAt`.
 
 **FocusSentence (Fokussatz)**
 - `id`, `valueId`, `text` (1–500).
@@ -336,7 +351,7 @@ Jede Zeile der Tabelle `Item` ist eine **Item-Version**; zusammengehörige Versi
 - `id`, `createdAt`. Klammer um alle Item-Versionen, die auseinander hervorgegangen sind (Glossar „Item-Familie"). Wird beim Anlegen der ersten Version (manuell, KI oder Import) erzeugt und gelöscht, sobald ihre letzte Version gelöscht wird (5.26). Dient in `createNewVersion` als Sperrobjekt (`SELECT … FOR UPDATE`) für die Vergabe der Versionsnummer.
 
 **Item (Item-Version)**
-- `id`, `familyId` (→ `ItemFamily.id`), `versionNumber` (ganze Zahl ≥ 1, `UNIQUE (familyId, versionNumber)`), `predecessorId` (nullable, → `Item.id`; `NULL` bei Version 1), `text` (1–500), `itemType` ∈ {`FRAGE`, `SITUATION`}, `perspective` ∈ {`SELBST`, `TEAM`, `FUEHRUNG`} (genau eine), `status` ∈ {`ZUR_PRUEFUNG`, `FREIGEGEBEN`, `DEAKTIVIERT`} (5.12), **`usedAt`** (nullable Timestamp; `NULL` = nicht verwendet), `origin` ∈ {`MANUELL`, `KI`, `IMPORT`} (informativ), `createdAt`, `updatedAt`. Vorschläge aus KI und Import sind Items im Status `ZUR_PRUEFUNG` (3.8, 4.6).
+- `id`, `organizationId` (unveränderlich), `familyId` (→ `ItemFamily.id`), `versionNumber` (ganze Zahl ≥ 1, `UNIQUE (familyId, versionNumber)`), `predecessorId` (nullable, → `Item.id`; `NULL` bei Version 1), `text` (1–500), `itemType` ∈ {`FRAGE`, `SITUATION`}, `perspective` ∈ {`SELBST`, `TEAM`, `FUEHRUNG`} (genau eine), `status` ∈ {`ZUR_PRUEFUNG`, `FREIGEGEBEN`, `DEAKTIVIERT`} (5.12), **`usedAt`** (nullable Timestamp; `NULL` = nicht verwendet), `origin` ∈ {`MANUELL`, `KI`, `IMPORT`} (informativ), `createdAt`, `updatedAt`. Vorschläge aus KI und Import sind Items im Status `ZUR_PRUEFUNG` (3.8, 4.6).
 - **`usedAt`** wird in der Aktivierungstransaktion einmalig gesetzt (5.19, 6.13) und nie zurückgesetzt. Ist `usedAt` gesetzt, sind `text`, `itemType`, `perspective` und die zugehörigen `ValueAssignment`s unveränderlich (5.20); änderbar bleibt ausschließlich `status` (5.16, 5.25, 6.15, 6.22). Zusätzlich zum Domain-Guard sichert ein Datenbank-Trigger ab, dass bei `usedAt IS NOT NULL` nur `status` und `updatedAt` geändert werden, keine `ValueAssignment` der Version eingefügt, geändert oder gelöscht wird und die Version nicht gelöscht werden kann (5.27).
 - Neue Versionen entstehen nur aus verwendeten Versionen (`createNewVersion`, 5.21); eine Version mit Nachfolger ist daher immer verwendet und nicht löschbar.
 
@@ -344,7 +359,7 @@ Jede Zeile der Tabelle `Item` ist eine **Item-Version**; zusammengehörige Versi
 - `id`, `itemId`, `valueId`, `weight` (NUMERIC, 0–100); eindeutig je `(itemId, valueId)`. Mehrere Zuordnungen je Item erlaubt, je mit eigener Gewichtung; mehrere dürfen 100 % tragen (5.9). Vorgeschlagene Zuordnungen sind direkt änderbare `ValueAssignment`s des Items (3.5, 5.10).
 
 **Campaign (Kampagne)**
-- `id`, `title` (1–200), `startDate`, `endDate` (> startDate), `status` ∈ {`ENTWURF`, `AKTIV`, `ABGESCHLOSSEN`}, `itemsPerParticipant`, `anonymityThreshold` (ganze Zahl 3–100, Vorgabe 5; ab Aktivierung unveränderlich, 6.28–6.30), `distributionMode` ∈ {`PUBLIC_LINK`, `EMAIL_ONE_TIME`}, `activatedAt`, `closedAt`. Keine eigene Werte-Zuordnung: Die Unternehmenswerte einer Kampagne werden aus den Items abgeleitet (6.4).
+- `id`, `organizationId`, `title` (1–200), `startDate`, `endDate` (> startDate), `status` ∈ {`ENTWURF`, `AKTIV`, `ABGESCHLOSSEN`}, `itemsPerParticipant`, `anonymityThreshold` (ganze Zahl 3–100, Vorgabe 5; ab Aktivierung unveränderlich, 6.28–6.30), `distributionMode` ∈ {`PUBLIC_LINK`, `EMAIL_ONE_TIME`}, `activatedAt`, `closedAt`. Keine eigene Werte-Zuordnung: Die Unternehmenswerte einer Kampagne werden aus den Items abgeleitet (6.4).
 
 **CampaignPoolItem (Pool im Status Entwurf)**
 - `campaignId`, `itemId` (konkrete Item-Version). Die Mitgliedschaft macht eine Version nicht zu „verwendet" (5.19). Nur Item-Versionen mit Status `FREIGEGEBEN` dürfen eingetragen werden (6.4, 6.5); bei Aktivierung erneut geprüft (6.11) und in den Snapshot überführt.
@@ -573,6 +588,18 @@ Eine Eigenschaft (Property) ist ein Merkmal oder Verhalten, das über alle gült
 
 **Validates: Requirements 9.10, 10.13, 10.17**
 
+### Property 33: Daten verschiedener Unternehmungen bleiben getrennt
+
+*Für alle* Unternehmungen `A ≠ B`, *für alle* Benutzer ohne Plattform-Admin-Recht und *für alle* Anfragen mit aktiver Unternehmung `B` SOLL keine Antwort Unternehmenswerte, Items, Kampagnen oder Mitglieder von `A` enthalten, jede Änderung an einer ID aus `A` SOLL als „nicht gefunden" abgelehnt werden, und keine Werte-Zuordnung oder kein Pool-Eintrag SOLL Objekte aus `A` und `B` verbinden.
+
+**Validates: Requirements 12.1, 12.2**
+
+### Property 34: Rollen bestimmen die erlaubten Aktionen
+
+*Für alle* Benutzer, *für alle* Rollenmengen `R` in der aktiven Unternehmung und *für alle* Aktionen `a` mit benötigten Rollen `N(a)` SOLL `a` genau dann ausgeführt werden, wenn `R ∩ N(a) ≠ ∅` oder der Benutzer Plattform-Administrator ist; andernfalls SOLL die Antwort 403 lauten und keine Daten der Aktion enthalten. Nach jeder erfolgreichen Änderung an Mitgliedschaften SOLL mindestens ein Mitglied die Rolle `ADMIN` besitzen, sofern vorher eines sie besass.
+
+**Validates: Requirements 12.5, 12.8, 12.9, 12.10**
+
 ## Error Handling
 
 Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein definiertes, für den Nutzer verständliches und datenschutzkonformes Verhalten.
@@ -584,6 +611,10 @@ Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein d
 - Validierung erfolgt sowohl im Frontend (sofortiges Feedback) als auch im Backend (verbindliche Durchsetzung).
 
 ### Authentifizierungsfehler
+
+- **Fehlende Unternehmung**: Admin-Anfrage ohne `X-Organization-Id` → 400 „Bitte eine Unternehmung auswählen"; Unternehmung ohne Mitgliedschaft → 403 „Kein Zugriff auf diese Unternehmung" (12.1).
+- **Fehlende Rolle**: 403 mit Nennung der fehlenden Rolle, keine Daten (12.9). Das Frontend blendet Bereiche ohne passende Rolle aus.
+- **Benutzerverwaltung**: unbekannte E-Mail ohne konfigurierte Einladung → `USER_NOT_FOUND`; bereits zugeordnet → `ALREADY_MEMBER`; letzte Benutzer-Administration entfernen → `LAST_ADMIN` (12.7, 12.8).
 
 - **Ungültige Anmeldedaten**: generische Fehlermeldung ohne Angabe des fehlerhaften Feldes; keine Sitzung wird erstellt (1.2).
 - **Lockout**: nach 5 Fehlversuchen in 15 Minuten wird weiterer Versuch für mindestens 15 Minuten serverseitig abgelehnt, mit Hinweis auf die vorübergehende Sperrung (1.3).
@@ -670,7 +701,7 @@ Es wird ein mehrschichtiger, überwiegend automatisierter Testansatz verfolgt, d
 
 ### Property-Based Tests (fast-check)
 
-- Die unter "Correctness Properties" definierten Eigenschaften (Property 1–32) werden je als **ein** fast-check-Property-Test implementiert, mit mindestens **100 Iterationen** je Test.
+- Die unter "Correctness Properties" definierten Eigenschaften (Property 1–34) werden je als **ein** fast-check-Property-Test implementiert, mit mindestens **100 Iterationen** je Test.
 - Schwerpunkt auf der Ist-Score-Mathematik (Wertebereich, Homogenität, Neutralität von Gewicht 0, Idempotenz der Rundung, Perspektiven-Unabhängigkeit, monotone Schranken), der Teilmengen-Ziehung (Größe `min(n, aktive)`, Pool-/Aktivzugehörigkeit, Duplikatfreiheit), der Snapshot-Unveränderlichkeit samt Deaktivierung als einziger Mutation, dem Ausschluss deaktivierter Items in Score/Auswertung/CSV und dem Import-Round-Trip (Generatoren erzeugen Werte, gültige und ungültige Items sowie zufällig deaktivierte Item-Mengen und Abgabezeitpunkte).
 - Jeder Property-Test trägt einen Verweis auf die zugehörige Design-Eigenschaft im Format: **Feature: kulturbarometer, Property {Nummer}: {Property-Text}**.
 

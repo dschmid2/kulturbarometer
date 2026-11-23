@@ -11,6 +11,7 @@ import {
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Sql, Tx } from '../db/client.js';
+import { orgId, requireRole } from '../auth/guard.js';
 import { AppError, notFound } from '../http/errors.js';
 
 export interface ItemAssignmentDto {
@@ -48,12 +49,17 @@ interface ItemRow {
   updatedAt: Date;
 }
 
-async function loadItems(sql: Sql | Tx, ids: readonly string[] | null): Promise<ItemDto[]> {
+async function loadItems(
+  sql: Sql | Tx,
+  org: string,
+  ids: readonly string[] | null,
+): Promise<ItemDto[]> {
   const rows = await sql<ItemRow[]>`
     select id, family_id as "familyId", version_number as "versionNumber", predecessor_id as "predecessorId",
            text, item_type as "itemType", perspective, status, origin, used_at as "usedAt", updated_at as "updatedAt"
     from item
-    ${ids ? sql`where id = any(${ids as string[]}::uuid[])` : sql``}
+    where organization_id = ${org}
+    ${ids ? sql`and id = any(${ids as string[]}::uuid[])` : sql``}
     order by created_at desc`;
   if (rows.length === 0) return [];
   const assignments = await sql<(ItemAssignmentDto & { itemId: string })[]>`
@@ -79,8 +85,8 @@ async function loadItems(sql: Sql | Tx, ids: readonly string[] | null): Promise<
   }));
 }
 
-export async function getItem(sql: Sql | Tx, id: string): Promise<ItemDto> {
-  const [item] = await loadItems(sql, [id]);
+export async function getItem(sql: Sql | Tx, org: string, id: string): Promise<ItemDto> {
+  const [item] = await loadItems(sql, org, [id]);
   if (!item) throw notFound('Die Frage');
   return item;
 }
@@ -88,11 +94,12 @@ export async function getItem(sql: Sql | Tx, id: string): Promise<ItemDto> {
 /** Items, optional gefiltert nach Wert (Gewichtung > 0 %, 5.28) und Status. */
 export async function listItems(
   sql: Sql,
+  org: string,
   filter: { valueId?: string; status?: ItemStatus },
 ): Promise<ItemDto[]> {
   const ids = await sql<{ id: string }[]>`
     select i.id from item i
-    where true
+    where i.organization_id = ${org}
       ${filter.status ? sql`and i.status = ${filter.status}` : sql``}
       ${
         filter.valueId
@@ -101,13 +108,15 @@ export async function listItems(
       }`;
   return loadItems(
     sql,
+    org,
     ids.map((r) => r.id),
   );
 }
 
-async function assertValuesExist(tx: Tx, input: ItemInput): Promise<void> {
+async function assertValuesExist(tx: Tx, org: string, input: ItemInput): Promise<void> {
   const ids = input.assignments.map((a) => a.valueId);
-  const found = await tx<{ id: string }[]>`select id from value where id = any(${ids}::uuid[])`;
+  const found = await tx<{ id: string }[]>`
+    select id from value where id = any(${ids}::uuid[]) and organization_id = ${org}`;
   if (found.length !== new Set(ids).size) {
     throw new AppError(
       422,
@@ -129,14 +138,15 @@ async function insertAssignments(tx: Tx, itemId: string, input: ItemInput): Prom
 /** Neues Item als Version 1 einer neuen Familie im Status „zur Prüfung" (5.1). */
 export async function createItemInTx(
   tx: Tx,
+  org: string,
   input: ItemInput,
   origin: ItemOrigin,
 ): Promise<string> {
-  await assertValuesExist(tx, input);
+  await assertValuesExist(tx, org, input);
   const [family] = await tx<{ id: string }[]>`insert into item_family default values returning id`;
   const [item] = await tx<{ id: string }[]>`
-    insert into item (family_id, version_number, text, item_type, perspective, status, origin)
-    values (${family!.id}, 1, ${input.text}, ${input.itemType}, ${input.perspective}, 'ZUR_PRUEFUNG', ${origin})
+    insert into item (organization_id, family_id, version_number, text, item_type, perspective, status, origin)
+    values (${org}, ${family!.id}, 1, ${input.text}, ${input.itemType}, ${input.perspective}, 'ZUR_PRUEFUNG', ${origin})
     returning id`;
   await insertAssignments(tx, item!.id, input);
   return item!.id;
@@ -144,12 +154,13 @@ export async function createItemInTx(
 
 export async function createItem(
   sql: Sql,
+  org: string,
   body: unknown,
   origin: ItemOrigin = 'MANUELL',
 ): Promise<ItemDto> {
   const input = itemInputSchema.parse(body);
-  const id = await sql.begin((tx) => createItemInTx(tx, input, origin));
-  return getItem(sql, id);
+  const id = await sql.begin((tx) => createItemInTx(tx, org, input, origin));
+  return getItem(sql, org, id);
 }
 
 /**
@@ -158,21 +169,23 @@ export async function createItem(
  */
 export async function createNewVersionInTx(
   tx: Tx,
+  org: string,
   predecessorId: string,
   input: ItemInput,
   origin?: ItemOrigin,
 ): Promise<string> {
-  await assertValuesExist(tx, input);
+  await assertValuesExist(tx, org, input);
   const [pred] = await tx<{ familyId: string; origin: ItemOrigin }[]>`
-    select family_id as "familyId", origin from item where id = ${predecessorId}`;
+    select family_id as "familyId", origin from item
+    where id = ${predecessorId} and organization_id = ${org}`;
   if (!pred) throw notFound('Die Frage');
   await tx`select id from item_family where id = ${pred.familyId} for update`;
   const [maxRow] = await tx<{ next: number }[]>`
     select coalesce(max(version_number), 0) + 1 as next from item where family_id = ${pred.familyId}`;
   const next = maxRow!.next;
   const [item] = await tx<{ id: string }[]>`
-    insert into item (family_id, version_number, predecessor_id, text, item_type, perspective, status, origin)
-    values (${pred.familyId}, ${next}, ${predecessorId}, ${input.text}, ${input.itemType}, ${input.perspective},
+    insert into item (organization_id, family_id, version_number, predecessor_id, text, item_type, perspective, status, origin)
+    values (${org}, ${pred.familyId}, ${next}, ${predecessorId}, ${input.text}, ${input.itemType}, ${input.perspective},
             'ZUR_PRUEFUNG', ${origin ?? pred.origin})
     returning id`;
   await insertAssignments(tx, item!.id, input);
@@ -185,18 +198,19 @@ export async function createNewVersionInTx(
  */
 export async function updateItem(
   sql: Sql,
+  org: string,
   id: string,
   body: unknown,
 ): Promise<ItemDto & { newVersion: boolean }> {
   const input = itemInputSchema.parse(body);
   const result = await sql.begin(async (tx) => {
     const [current] = await tx<{ usedAt: Date | null }[]>`
-      select used_at as "usedAt" from item where id = ${id} for update`;
+      select used_at as "usedAt" from item where id = ${id} and organization_id = ${org} for update`;
     if (!current) throw notFound('Die Frage');
     if (current.usedAt !== null) {
-      return { id: await createNewVersionInTx(tx, id, input), newVersion: true };
+      return { id: await createNewVersionInTx(tx, org, id, input), newVersion: true };
     }
-    await assertValuesExist(tx, input);
+    await assertValuesExist(tx, org, input);
     await tx`
       update item set text = ${input.text}, item_type = ${input.itemType}, perspective = ${input.perspective},
                       status = 'ZUR_PRUEFUNG'
@@ -209,7 +223,7 @@ export async function updateItem(
       where c.id = p.campaign_id and c.status = 'ENTWURF' and p.item_id = ${id}`;
     return { id, newVersion: false };
   });
-  return { ...(await getItem(sql, result.id)), newVersion: result.newVersion };
+  return { ...(await getItem(sql, org, result.id)), newVersion: result.newVersion };
 }
 
 /** Freigabe (5.13, 5.14, 5.25): nur aus „zur Prüfung" oder „deaktiviert", Regeln erneut prüfen. */
@@ -225,8 +239,8 @@ function approvalViolation(item: ItemDto): string | null {
   return check.error.issues[0]?.message ?? 'Die Frage erfüllt die Gültigkeitsregeln nicht.';
 }
 
-export async function approveItem(sql: Sql, id: string): Promise<ItemDto> {
-  const item = await getItem(sql, id);
+export async function approveItem(sql: Sql, org: string, id: string): Promise<ItemDto> {
+  const item = await getItem(sql, org, id);
   if (item.status === 'FREIGEGEBEN') {
     throw new AppError(409, 'ALREADY_APPROVED', 'Die Frage ist bereits freigegeben.');
   }
@@ -235,7 +249,7 @@ export async function approveItem(sql: Sql, id: string): Promise<ItemDto> {
     throw new AppError(422, 'RULE_VIOLATED', `Freigabe nicht möglich: ${violation}`);
   }
   await sql`update item set status = 'FREIGEGEBEN' where id = ${id}`;
-  return getItem(sql, id);
+  return getItem(sql, org, id);
 }
 
 export const bulkApproveSchema = z.object({
@@ -255,13 +269,17 @@ export interface BulkApproveResult {
  * Gültige Fragen werden in einer Transaktion freigegeben; bereits freigegebene, unbekannte oder
  * ungültige Fragen werden mit Grund übersprungen.
  */
-export async function bulkApproveItems(sql: Sql, body: unknown): Promise<BulkApproveResult> {
+export async function bulkApproveItems(
+  sql: Sql,
+  org: string,
+  body: unknown,
+): Promise<BulkApproveResult> {
   const { ids } = bulkApproveSchema.parse(body);
   const unique = [...new Set(ids)];
   return sql.begin(async (tx) => {
     // Sperre verhindert, dass parallel bearbeitete Fragen ungeprüft freigegeben werden.
-    await tx`select id from item where id = any(${unique}::uuid[]) for update`;
-    const items = await loadItems(tx, unique);
+    await tx`select id from item where id = any(${unique}::uuid[]) and organization_id = ${org} for update`;
+    const items = await loadItems(tx, org, unique);
     const byId = new Map(items.map((i) => [i.id, i]));
     const approved: string[] = [];
     const skipped: BulkApproveResult['skipped'] = [];
@@ -284,8 +302,8 @@ export async function bulkApproveItems(sql: Sql, body: unknown): Promise<BulkApp
 }
 
 /** Deaktivieren außerhalb einer laufenden Kampagne (5.16): nur der Status ändert sich. */
-export async function deactivateItem(sql: Sql, id: string): Promise<ItemDto> {
-  const item = await getItem(sql, id);
+export async function deactivateItem(sql: Sql, org: string, id: string): Promise<ItemDto> {
+  const item = await getItem(sql, org, id);
   if (item.status !== 'FREIGEGEBEN') {
     throw new AppError(409, 'NOT_APPROVED', 'Nur freigegebene Fragen können deaktiviert werden.');
   }
@@ -295,14 +313,15 @@ export async function deactivateItem(sql: Sql, id: string): Promise<ItemDto> {
       delete from campaign_pool_item p using campaign c
       where c.id = p.campaign_id and c.status = 'ENTWURF' and p.item_id = ${id}`;
   });
-  return getItem(sql, id);
+  return getItem(sql, org, id);
 }
 
 /** Löschen (5.26, 5.27): nur nicht verwendete Versionen; leere Familie wird mitgelöscht. */
-export async function deleteItem(sql: Sql, id: string): Promise<void> {
+export async function deleteItem(sql: Sql, org: string, id: string): Promise<void> {
   await sql.begin(async (tx) => {
     const [item] = await tx<{ usedAt: Date | null; familyId: string }[]>`
-      select used_at as "usedAt", family_id as "familyId" from item where id = ${id} for update`;
+      select used_at as "usedAt", family_id as "familyId" from item
+      where id = ${id} and organization_id = ${org} for update`;
     if (!item) throw notFound('Die Frage');
     if (item.usedAt !== null) {
       throw new AppError(
@@ -318,7 +337,7 @@ export async function deleteItem(sql: Sql, id: string): Promise<void> {
 }
 
 /** Versionshistorie einer Familie (5.24). */
-export async function listFamilyVersions(sql: Sql, familyId: string) {
+export async function listFamilyVersions(sql: Sql, org: string, familyId: string) {
   return sql<
     {
       itemId: string;
@@ -330,40 +349,43 @@ export async function listFamilyVersions(sql: Sql, familyId: string) {
   >`
     select id as "itemId", version_number as "versionNumber", status, used_at is not null as used,
            predecessor_id as "predecessorId"
-    from item where family_id = ${familyId} order by version_number`;
+    from item where family_id = ${familyId} and organization_id = ${org} order by version_number`;
 }
 
+/** Fragen lesen dürfen auch Kampagnen-Administratoren (für Pools), ändern nur die Werte-Administration. */
 export function itemsRouter(sql: () => Sql): Router {
   const r = Router();
-  r.get('/items', async (req, res) => {
+  const read = requireRole('WERTE', 'KAMPAGNEN');
+  const write = requireRole('WERTE');
+  r.get('/items', read, async (req, res) => {
     const valueId = typeof req.query.valueId === 'string' ? req.query.valueId : undefined;
     const status = ITEM_STATUSES.find((s) => s === req.query.status);
-    res.json(await listItems(sql(), { valueId, status }));
+    res.json(await listItems(sql(), orgId(req), { valueId, status }));
   });
-  r.post('/items', async (req, res) => {
-    res.status(201).json(await createItem(sql(), req.body));
+  r.post('/items', write, async (req, res) => {
+    res.status(201).json(await createItem(sql(), orgId(req), req.body));
   });
-  r.get('/items/:id', async (req, res) => {
-    res.json(await getItem(sql(), req.params.id));
+  r.get('/items/:id', read, async (req, res) => {
+    res.json(await getItem(sql(), orgId(req), String(req.params.id)));
   });
-  r.put('/items/:id', async (req, res) => {
-    res.json(await updateItem(sql(), req.params.id, req.body));
+  r.put('/items/:id', write, async (req, res) => {
+    res.json(await updateItem(sql(), orgId(req), String(req.params.id), req.body));
   });
-  r.delete('/items/:id', async (req, res) => {
-    await deleteItem(sql(), req.params.id);
+  r.delete('/items/:id', write, async (req, res) => {
+    await deleteItem(sql(), orgId(req), String(req.params.id));
     res.status(204).end();
   });
-  r.post('/items/bulk-approve', async (req, res) => {
-    res.json(await bulkApproveItems(sql(), req.body));
+  r.post('/items/bulk-approve', write, async (req, res) => {
+    res.json(await bulkApproveItems(sql(), orgId(req), req.body));
   });
-  r.post('/items/:id/approve', async (req, res) => {
-    res.json(await approveItem(sql(), req.params.id));
+  r.post('/items/:id/approve', write, async (req, res) => {
+    res.json(await approveItem(sql(), orgId(req), String(req.params.id)));
   });
-  r.post('/items/:id/deactivate', async (req, res) => {
-    res.json(await deactivateItem(sql(), req.params.id));
+  r.post('/items/:id/deactivate', write, async (req, res) => {
+    res.json(await deactivateItem(sql(), orgId(req), String(req.params.id)));
   });
-  r.get('/item-families/:id/versions', async (req, res) => {
-    res.json(await listFamilyVersions(sql(), req.params.id));
+  r.get('/item-families/:id/versions', read, async (req, res) => {
+    res.json(await listFamilyVersions(sql(), orgId(req), String(req.params.id)));
   });
   return r;
 }

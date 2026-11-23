@@ -1,6 +1,7 @@
-/** Unternehmenswerte und Fokussätze (Anforderung 2). */
+/** Unternehmenswerte und Fokussätze (Anforderung 2), jeweils innerhalb einer Unternehmung (12). */
 import { focusSentenceInputSchema, valueInputSchema } from '@kb/shared';
 import { Router } from 'express';
+import { orgId, requireRole } from '../auth/guard.js';
 import type { Sql, Tx } from '../db/client.js';
 import { AppError, notFound } from '../http/errors.js';
 
@@ -17,11 +18,14 @@ export interface ValueDto {
   focusSentences: FocusSentenceDto[];
 }
 
-export async function listValues(sql: Sql | Tx): Promise<ValueDto[]> {
+export async function listValues(sql: Sql | Tx, org: string): Promise<ValueDto[]> {
   const values = await sql<{ id: string; name: string; description: string }[]>`
-    select id, name, description from value order by name`;
+    select id, name, description from value where organization_id = ${org} order by name`;
   const sentences = await sql<(FocusSentenceDto & { valueId: string })[]>`
-    select id, value_id as "valueId", text, position from focus_sentence order by position, created_at`;
+    select f.id, f.value_id as "valueId", f.text, f.position
+    from focus_sentence f join value v on v.id = f.value_id
+    where v.organization_id = ${org}
+    order by f.position, f.created_at`;
   return values.map((v) => ({
     ...v,
     focusSentences: sentences
@@ -30,8 +34,8 @@ export async function listValues(sql: Sql | Tx): Promise<ValueDto[]> {
   }));
 }
 
-async function getValue(sql: Sql | Tx, id: string): Promise<ValueDto> {
-  const value = (await listValues(sql)).find((v) => v.id === id);
+async function getValue(sql: Sql | Tx, org: string, id: string): Promise<ValueDto> {
+  const value = (await listValues(sql, org)).find((v) => v.id === id);
   if (!value) throw notFound('Der Unternehmenswert');
   return value;
 }
@@ -46,25 +50,32 @@ function duplicateName(err: unknown): AppError | null {
   return null;
 }
 
-export async function createValue(sql: Sql, input: unknown): Promise<ValueDto> {
+export async function createValue(sql: Sql, org: string, input: unknown): Promise<ValueDto> {
   const { name, description } = valueInputSchema.parse(input);
   try {
     const [row] = await sql<{ id: string }[]>`
-      insert into value (name, description) values (${name}, ${description}) returning id`;
-    return getValue(sql, row!.id);
+      insert into value (organization_id, name, description)
+      values (${org}, ${name}, ${description}) returning id`;
+    return getValue(sql, org, row!.id);
   } catch (err) {
     throw duplicateName(err) ?? err;
   }
 }
 
 /** Bearbeiten ist auch bei Referenz durch verwendete Item-Versionen erlaubt (2.7). */
-export async function updateValue(sql: Sql, id: string, input: unknown): Promise<ValueDto> {
+export async function updateValue(
+  sql: Sql,
+  org: string,
+  id: string,
+  input: unknown,
+): Promise<ValueDto> {
   const { name, description } = valueInputSchema.parse(input);
   try {
-    const rows =
-      await sql`update value set name = ${name}, description = ${description} where id = ${id} returning id`;
+    const rows = await sql`
+      update value set name = ${name}, description = ${description}
+      where id = ${id} and organization_id = ${org} returning id`;
     if (rows.length === 0) throw notFound('Der Unternehmenswert');
-    return getValue(sql, id);
+    return getValue(sql, org, id);
   } catch (err) {
     throw duplicateName(err) ?? err;
   }
@@ -76,9 +87,10 @@ export async function updateValue(sql: Sql, id: string, input: unknown): Promise
  * verliert eine Version dadurch ihre letzte Zuordnung > 0 %, geht sie auf „zur Prüfung" und
  * fällt aus den Entwurfs-Pools.
  */
-export async function deleteValue(sql: Sql, id: string): Promise<void> {
+export async function deleteValue(sql: Sql, org: string, id: string): Promise<void> {
   await sql.begin(async (tx) => {
-    const [value] = await tx`select id from value where id = ${id} for update`;
+    const [value] = await tx`
+      select id from value where id = ${id} and organization_id = ${org} for update`;
     if (!value) throw notFound('Der Unternehmenswert');
 
     const [used] = await tx`
@@ -114,56 +126,72 @@ export async function deleteValue(sql: Sql, id: string): Promise<void> {
 
 export async function addFocusSentence(
   sql: Sql,
+  org: string,
   valueId: string,
   input: unknown,
 ): Promise<ValueDto> {
   const { text } = focusSentenceInputSchema.parse(input);
-  const [exists] = await sql`select 1 from value where id = ${valueId}`;
+  const [exists] =
+    await sql`select 1 from value where id = ${valueId} and organization_id = ${org}`;
   if (!exists) throw notFound('Der Unternehmenswert');
   await sql`
     insert into focus_sentence (value_id, text, position)
     values (${valueId}, ${text}, (select coalesce(max(position), 0) + 1 from focus_sentence where value_id = ${valueId}))`;
-  return getValue(sql, valueId);
+  return getValue(sql, org, valueId);
 }
 
-export async function updateFocusSentence(sql: Sql, id: string, input: unknown): Promise<ValueDto> {
+export async function updateFocusSentence(
+  sql: Sql,
+  org: string,
+  id: string,
+  input: unknown,
+): Promise<ValueDto> {
   const { text } = focusSentenceInputSchema.parse(input);
   const [row] = await sql<{ valueId: string }[]>`
-    update focus_sentence set text = ${text} where id = ${id} returning value_id as "valueId"`;
+    update focus_sentence f set text = ${text}
+    from value v
+    where f.id = ${id} and v.id = f.value_id and v.organization_id = ${org}
+    returning f.value_id as "valueId"`;
   if (!row) throw notFound('Der Fokussatz');
-  return getValue(sql, row.valueId);
+  return getValue(sql, org, row.valueId);
 }
 
-export async function removeFocusSentence(sql: Sql, id: string): Promise<ValueDto> {
+export async function removeFocusSentence(sql: Sql, org: string, id: string): Promise<ValueDto> {
   const [row] = await sql<{ valueId: string }[]>`
-    delete from focus_sentence where id = ${id} returning value_id as "valueId"`;
+    delete from focus_sentence f using value v
+    where f.id = ${id} and v.id = f.value_id and v.organization_id = ${org}
+    returning f.value_id as "valueId"`;
   if (!row) throw notFound('Der Fokussatz');
-  return getValue(sql, row.valueId);
+  return getValue(sql, org, row.valueId);
 }
 
+/** Lesen dürfen auch Kampagnen-Administratoren (für Pools und Auswertungen), ändern nur die Werte-Administration. */
 export function valuesRouter(sql: () => Sql): Router {
   const r = Router();
-  r.get('/values', async (_req, res) => {
-    res.json(await listValues(sql()));
+  const write = requireRole('WERTE');
+  r.get('/values', requireRole('WERTE', 'KAMPAGNEN'), async (req, res) => {
+    res.json(await listValues(sql(), orgId(req)));
   });
-  r.post('/values', async (req, res) => {
-    res.status(201).json(await createValue(sql(), req.body));
+  r.post('/values', write, async (req, res) => {
+    res.status(201).json(await createValue(sql(), orgId(req), req.body));
   });
-  r.put('/values/:id', async (req, res) => {
-    res.json(await updateValue(sql(), req.params.id, req.body));
+  r.put('/values/:id', write, async (req, res) => {
+    res.json(await updateValue(sql(), orgId(req), String(req.params.id), req.body));
   });
-  r.delete('/values/:id', async (req, res) => {
-    await deleteValue(sql(), req.params.id);
+  r.delete('/values/:id', write, async (req, res) => {
+    await deleteValue(sql(), orgId(req), String(req.params.id));
     res.status(204).end();
   });
-  r.post('/values/:id/focus-sentences', async (req, res) => {
-    res.status(201).json(await addFocusSentence(sql(), req.params.id, req.body));
+  r.post('/values/:id/focus-sentences', write, async (req, res) => {
+    res
+      .status(201)
+      .json(await addFocusSentence(sql(), orgId(req), String(req.params.id), req.body));
   });
-  r.put('/focus-sentences/:id', async (req, res) => {
-    res.json(await updateFocusSentence(sql(), req.params.id, req.body));
+  r.put('/focus-sentences/:id', write, async (req, res) => {
+    res.json(await updateFocusSentence(sql(), orgId(req), String(req.params.id), req.body));
   });
-  r.delete('/focus-sentences/:id', async (req, res) => {
-    res.json(await removeFocusSentence(sql(), req.params.id));
+  r.delete('/focus-sentences/:id', write, async (req, res) => {
+    res.json(await removeFocusSentence(sql(), orgId(req), String(req.params.id)));
   });
   return r;
 }

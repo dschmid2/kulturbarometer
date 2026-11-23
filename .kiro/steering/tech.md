@@ -26,7 +26,8 @@ Dieses Dokument legt den verbindlichen Techstack des Kulturbarometers fest. Spez
 
 ## Querschnitt
 
-- **Authentifizierung der Administratoren:** Supabase Auth (E-Mail und Passwort). Das Frontend meldet sich über supabase-js an; das Backend prüft das Zugriffstoken in der Middleware `AuthGuard`. Sperre nach Fehlversuchen und Inaktivitäts-Timeout (Anforderung 1.3, 1.6) werden nach dem Prototyp im Backend ergänzt.
+- **Authentifizierung:** Supabase Auth (E-Mail und Passwort). Das Frontend meldet sich über supabase-js an; das Backend prüft das Zugriffstoken in der Middleware `AuthGuard`. Sperre nach Fehlversuchen und Inaktivitäts-Timeout (Anforderung 1.3, 1.6) werden nach dem Prototyp im Backend ergänzt.
+- **Mandanten und Rollen:** Daten gehören einer Unternehmung; Rollen (`ADMIN`, `WERTE`, `KAMPAGNEN`) stehen je Unternehmung in `organization_member`. Die aktive Unternehmung kommt im Header `X-Organization-Id`. Plattform-Administratoren tragen `app_metadata.kb_role = 'admin'` (nur serverseitig setzbar). Einladungen neuer Konten laufen über die Supabase-Admin-API mit `SUPABASE_SECRET_KEY` (optional, nur im Backend).
 - **Validierung:** Zod (geteilte Schemata in `packages/shared`)
 - **Tests:** Vitest und fast-check (Property-Based Testing)
 - **LLM-Anbindung:** hinter dem Port `ItemGenerationPort`; im Prototyp ein Mock-Adapter, ein echter Adapter sobald ein API-Zugang vorliegt

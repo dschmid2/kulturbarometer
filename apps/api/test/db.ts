@@ -45,6 +45,7 @@ export async function truncateAll(sql: Sql): Promise<void> {
     set session_replication_role = replica;
     truncate answer_item, participation, survey_session, participant_marker, campaign_link,
              snapshot_assignment, snapshot_item, campaign_pool_item, campaign,
-             value_assignment, item, item_family, focus_sentence, value cascade;
+             value_assignment, item, item_family, focus_sentence, value,
+             organization_member, organization cascade;
     set session_replication_role = origin;`);
 }

@@ -68,3 +68,19 @@ export const PERSPECTIVE_GAP_HIGHLIGHT = 0.5;
 export function isAllowedCampaignTransition(from: CampaignStatus, to: CampaignStatus): boolean {
   return (from === 'ENTWURF' && to === 'AKTIV') || (from === 'AKTIV' && to === 'ABGESCHLOSSEN');
 }
+
+/** Rollen eines Benutzers innerhalb einer Unternehmung (Anforderung 12). */
+export const ROLES = ['ADMIN', 'WERTE', 'KAMPAGNEN'] as const;
+export type Role = (typeof ROLES)[number];
+
+export const ROLE_LABELS: Record<Role, string> = {
+  ADMIN: 'Benutzer-Administration',
+  WERTE: 'Werte-Administration',
+  KAMPAGNEN: 'Kampagnen-Administration',
+};
+
+export const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  ADMIN: 'Benutzer der Unternehmung zuordnen und Rollen vergeben',
+  WERTE: 'Unternehmenswerte, Fokussätze und Fragen verwalten',
+  KAMPAGNEN: 'Kampagnen durchführen und Auswertungen einsehen',
+};

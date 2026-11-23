@@ -17,6 +17,12 @@ export function setUnauthenticatedHandler(handler: () => void) {
   onUnauthenticated = handler;
 }
 
+/** Aktive Unternehmung; wird bei jeder Admin-Anfrage als `X-Organization-Id` mitgeschickt (12). */
+let activeOrganizationId: string | null = null;
+export function setActiveOrganizationId(id: string | null) {
+  activeOrganizationId = id;
+}
+
 async function authHeader(): Promise<Record<string, string>> {
   const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } };
   return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {};
@@ -31,6 +37,9 @@ export async function apiFetch<T>(
     headers: {
       ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(path.startsWith('/admin') ? await authHeader() : {}),
+      ...(path.startsWith('/admin') && activeOrganizationId
+        ? { 'X-Organization-Id': activeOrganizationId }
+        : {}),
     },
     body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
   });

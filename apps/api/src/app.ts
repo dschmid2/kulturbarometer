@@ -1,23 +1,33 @@
 import cookieParser from 'cookie-parser';
 import express, { Router } from 'express';
-import { authGuard, supabaseVerifyAdmin, type VerifyAdmin } from './auth/guard.js';
+import { authGuard, orgContext, supabaseVerifyToken, type VerifyToken } from './auth/guard.js';
 import { db, type Sql } from './db/client.js';
 import { errorHandler } from './http/errors.js';
 import { itemsRouter } from './modules/items.js';
+import {
+  accountRouter,
+  membersRouter,
+  supabaseUserDirectory,
+  type UserDirectory,
+} from './modules/organizations.js';
 import { valuesRouter } from './modules/values.js';
 
 export interface AppOptions {
   /** Datenbankzugriff; Standard ist die Verbindung aus DATABASE_URL. */
   sql?: () => Sql;
   /** Token-Prüfung; Standard ist Supabase Auth. */
-  verifyAdmin?: VerifyAdmin;
+  verifyToken?: VerifyToken;
+  /** Benutzerkonten nachschlagen und einladen; Standard ist Supabase Auth. */
+  userDirectory?: UserDirectory;
 }
 
 /** Erzeugt die Express-App mit getrennten Routern für Administration und Teilnahme (1.4). */
 export function createApp(options: AppOptions = {}) {
   const sql = options.sql ?? db;
-  let verify = options.verifyAdmin;
-  const lazyVerify: VerifyAdmin = (token) => (verify ??= supabaseVerifyAdmin())(token);
+  let verify = options.verifyToken;
+  const lazyVerify: VerifyToken = (token) => (verify ??= supabaseVerifyToken())(token);
+  let directory = options.userDirectory;
+  const lazyDirectory = () => (directory ??= supabaseUserDirectory(sql));
 
   const app = express();
   app.disable('x-powered-by');
@@ -43,13 +53,16 @@ export function createApp(options: AppOptions = {}) {
     }
   });
 
+  // Administration: Anmeldung (1.4); danach Konto-Routen ohne und Fachrouten mit Unternehmungs-Kontext (12).
   const admin = Router();
   admin.use(authGuard(lazyVerify));
-  admin.get('/me', (req, res) => {
-    res.json(req.admin);
-  });
-  admin.use(valuesRouter(sql));
-  admin.use(itemsRouter(sql));
+  admin.use(accountRouter(sql));
+  const scoped = Router();
+  scoped.use(orgContext(sql));
+  scoped.use(valuesRouter(sql));
+  scoped.use(itemsRouter(sql));
+  scoped.use(membersRouter(sql, lazyDirectory));
+  admin.use(scoped);
   app.use('/api/admin', admin);
 
   const publicRouter = Router();
