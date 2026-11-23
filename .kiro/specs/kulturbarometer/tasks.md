@@ -69,12 +69,12 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
     - Properties 9, 10 und 20
     - _Requirements: 6.17, 8.1_
 
-- [ ] 4. Anmeldung der Administratoren
+- [x] 4. Anmeldung der Administratoren
   - [x] 4.1 `AuthGuard`-Middleware: Supabase-Zugriffstoken prüfen, Admin-Routen ohne gültiges Token mit 401 abweisen
     - _Requirements: 1.1, 1.2, 1.4_
   - [x] 4.2 Login-Seite und Abmeldung im Frontend mit supabase-js; Weiterleitung auf die Anmeldeseite bei 401
     - _Requirements: 1.1, 1.2, 1.4, 1.5_
-  - [ ] 4.3 Ersten Administrator in Supabase Auth anlegen (dokumentierter Schritt im README)
+  - [x] 4.3 Ersten Administrator in Supabase Auth anlegen (dokumentierter Schritt im README)
     - _Requirements: 1.1_
 
 - [x] 5. Unternehmenswerte und Fokussätze
