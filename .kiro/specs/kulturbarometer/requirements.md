@@ -260,6 +260,8 @@ Teilnehmer beantworten die Umfrage anonym. Je Item geben Teilnehmer über einen 
 12. WENN beim erneuten Öffnen gemäß Kriterium 11 kein Item der Teilnehmer-Teilmenge mehr aktiv ist, DANN SOLL DAS System den Zugang ablehnen, den Einmal-Link unverbraucht lassen und den einheitlichen Hinweis anzeigen, dass die Umfrage derzeit nicht verfügbar ist.
 13. WÄHREND ein Teilnehmer die Umfrage beantwortet, SOLL DAS System den Zwischenstand ausschließlich im Browser des Teilnehmers speichern, beim erneuten Öffnen im selben Browser wiederherstellen und vor der erfolgreichen Übermittlung keine Ist-Bewertungen oder Freitextkommentare auf dem Server speichern.
 14. WENN die Umfrage erfolgreich übermittelt wurde, DANN SOLL DAS System den Zwischenstand im Browser des Teilnehmers löschen und die serverseitige Bindung der Teilnehmer-Teilmenge an den Einmal-Token bzw. die Teilnahmekennung entfernen.
+15. DAS System SOLL den Schieberegler jedes Items zu Beginn ohne vorausgewählten Wert darstellen und ein Item erst dann als bewertet behandeln, wenn der Teilnehmer den Schieberegler aktiv bedient hat; ein unberührter Schieberegler SOLL als fehlende Ist-Bewertung gemäß Kriterium 5 gelten.
+16. DAS System SOLL den Schieberegler zusätzlich zur Maus- bzw. Touch-Bedienung mit der Tastatur bedienbar machen und den aktuell gewählten Wert mit zwei Nachkommastellen anzeigen.
 
 ### Requirement 9: Ist-Score berechnen
 
