@@ -4,94 +4,94 @@ Umsetzungsplan für den **ersten Prototyp** des Kulturbarometers. Er baut den Ke
 
 Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingend sind. Die Property-Nummern verweisen auf die Correctness Properties im Design. Was bewusst erst nach dem Prototyp kommt, steht am Ende.
 
-- [ ] 1. Projektgrundlage aufsetzen
-  - [ ] 1.1 Monorepo mit npm-Workspaces anlegen
+- [x] 1. Projektgrundlage aufsetzen
+  - [x] 1.1 Monorepo mit npm-Workspaces anlegen
     - Workspaces `apps/web`, `apps/api`, `packages/shared`; gemeinsame `tsconfig`, ESLint, Prettier
     - Vitest und fast-check in allen Workspaces; Skript `npm test` im Root
     - `.env.example` mit allen benötigten Variablen ohne Werte; `.env` in `.gitignore`
     - _Requirements: tech.md_
-  - [ ] 1.2 Frontend-Grundgerüst in `apps/web`
+  - [x] 1.2 Frontend-Grundgerüst in `apps/web`
     - Vite + React 19 + TypeScript, React Router, TanStack Query
     - Getrennte Routenbereiche `/admin/*` und `/umfrage/*`
     - _Requirements: 1.4_
-  - [ ] 1.3 Backend-Grundgerüst in `apps/api`
+  - [x] 1.3 Backend-Grundgerüst in `apps/api`
     - Express-App mit zwei Routern (`/api/admin`, `/api/public`), zentrale Fehlerbehandlung mit fachlichen Fehlercodes
     - Datenbankzugriff über postgres.js mit Transaktions-Helfer; Konfiguration für Supabase-Pooler (`prepare: false`)
     - Einstiegspunkt für Vercel Function und lokaler Startbefehl
     - _Requirements: tech.md_
-  - [ ] 1.4 Vercel-Konfiguration
+  - [x] 1.4 Vercel-Konfiguration
     - `vercel.json` mit statischem Build des Frontends und Rewrite von `/api/*` auf die Express-Function
     - _Requirements: tech.md_
 
-- [ ] 2. Datenbankschema anlegen
-  - [ ] 2.1 Migration für Werte und Items
+- [x] 2. Datenbankschema anlegen
+  - [x] 2.1 Migration für Werte und Items
     - Tabellen `value`, `focus_sentence`, `item_family`, `item`, `value_assignment` mit allen Feldern, Längen- und Bereichs-Constraints aus dem Datenmodell
     - `UNIQUE (family_id, version_number)`, `UNIQUE (item_id, value_id)`, Fremdschlüssel `value_assignment.value_id` mit `ON DELETE RESTRICT`
     - Trigger: bei `used_at IS NOT NULL` nur `status`/`updated_at` änderbar, keine Änderung der Zuordnungen, keine Löschung
     - _Requirements: 2.1, 2.4, 5.1, 5.6, 5.9, 5.12, 5.20, 5.27_
-  - [ ] 2.2 Migration für Kampagnen und Snapshot
+  - [x] 2.2 Migration für Kampagnen und Snapshot
     - Tabellen `campaign` (inkl. `items_per_participant`, `anonymity_threshold` 3–100 mit Vorgabe 5, `distribution_mode`), `campaign_pool_item`, `snapshot_item`, `snapshot_assignment`
     - Trigger: Snapshot nach Aktivierung unveränderlich, `deactivated_at` nur einmal von `NULL` auf einen Zeitpunkt
     - _Requirements: 6.1, 6.13, 6.14, 6.28_
-  - [ ] 2.3 Migration für Teilnahme und Antworten
+  - [x] 2.3 Migration für Teilnahme und Antworten
     - Tabellen `campaign_link` (partieller Unique-Index für einen gültigen Link je Kampagne), `participant_marker`, `survey_session`, `participation` (`submitted_at` als Datum, `submission_seq`), `answer_item` (`rating NUMERIC(3,2)` 1,00–5,00, Kommentar bis 1.000 Zeichen)
     - Keine Verweise von `participation` auf Link, Kennung oder Session
     - _Requirements: 7.15, 7.19, 8.3, 8.9, 8.11_
-  - [ ] 2.4 Row Level Security auf allen Tabellen aktivieren, ohne Policies
+  - [x] 2.4 Row Level Security auf allen Tabellen aktivieren, ohne Policies
     - _Requirements: tech.md, 8.9_
 
-- [ ] 3. Gemeinsame Fachlogik in `packages/shared`
-  - [ ] 3.1 Typen, Enums und Zod-Schemata
+- [x] 3. Gemeinsame Fachlogik in `packages/shared`
+  - [x] 3.1 Typen, Enums und Zod-Schemata
     - Wert, Fokussatz, Item (geteiltes Item-Schema für Verwaltung, Import und KI-Ausgabe), Kampagne, Bewertung
     - _Requirements: 2.1–2.5, 4.4, 5.1–5.9, 6.1–6.3, 6.28, 8.2–8.4_
-  - [ ] 3.2 Ist-Score und Vorfilter
+  - [x] 3.2 Ist-Score und Vorfilter
     - `selectIncludedParticipations`, `selectScorableRatings`, `computeIstScore`, `countContributingParticipants`, `countExcludedRatings`, Rundung auf zwei Nachkommastellen
     - _Requirements: 9.1–9.7, 10.12_
-  - [ ]* 3.3 Property-Tests für den Ist-Score
+  - [x]* 3.3 Property-Tests für den Ist-Score
     - Properties 1–8 und 21 (Feature: kulturbarometer)
     - _Requirements: 9.1–9.5_
-  - [ ] 3.4 Verteilung und Perspektivdifferenzen
+  - [x] 3.4 Verteilung und Perspektivdifferenzen
     - `computeParticipantScores`, `computeDistribution` (fünf Klassen, Median, Standardabweichung), `computePerspectiveGaps`
     - _Requirements: 9.8–9.10_
-  - [ ]* 3.5 Property-Tests für Verteilung und Differenzen
+  - [x]* 3.5 Property-Tests für Verteilung und Differenzen
     - Properties 31 und 32
     - _Requirements: 9.8–9.10_
-  - [ ] 3.6 Anonymitätsschwelle
+  - [x] 3.6 Anonymitätsschwelle
     - `applyAnonymityThreshold` für Auswertung und Export
     - _Requirements: 10.6, 10.13, 10.14_
-  - [ ]* 3.7 Property-Tests für Schwelle und Stufen der Zwischenauswertung
+  - [x]* 3.7 Property-Tests für Schwelle und Stufen der Zwischenauswertung
     - Properties 27 und 28
     - _Requirements: 10.6, 10.12–10.14_
-  - [ ] 3.8 Ziehung der Teilnehmer-Teilmenge mit injizierbarem Zufallsgenerator
+  - [x] 3.8 Ziehung der Teilnehmer-Teilmenge mit injizierbarem Zufallsgenerator
     - `k = min(itemsPerParticipant, aktive Items)`, ohne Duplikate
     - _Requirements: 6.17, 6.19, 8.1_
-  - [ ]* 3.9 Property-Tests für die Ziehung
+  - [x]* 3.9 Property-Tests für die Ziehung
     - Properties 9, 10 und 20
     - _Requirements: 6.17, 8.1_
 
-- [ ] 4. Anmeldung der Administratoren
-  - [ ] 4.1 `AuthGuard`-Middleware: Supabase-Zugriffstoken prüfen, Admin-Routen ohne gültiges Token mit 401 abweisen
+- [x] 4. Anmeldung der Administratoren
+  - [x] 4.1 `AuthGuard`-Middleware: Supabase-Zugriffstoken prüfen, Admin-Routen ohne gültiges Token mit 401 abweisen
     - _Requirements: 1.1, 1.2, 1.4_
-  - [ ] 4.2 Login-Seite und Abmeldung im Frontend mit supabase-js; Weiterleitung auf die Anmeldeseite bei 401
+  - [x] 4.2 Login-Seite und Abmeldung im Frontend mit supabase-js; Weiterleitung auf die Anmeldeseite bei 401
     - _Requirements: 1.1, 1.2, 1.4, 1.5_
-  - [ ] 4.3 Ersten Administrator in Supabase Auth anlegen (dokumentierter Schritt im README)
+  - [x] 4.3 Ersten Administrator in Supabase Auth anlegen (dokumentierter Schritt im README)
     - _Requirements: 1.1_
 
-- [ ] 5. Unternehmenswerte und Fokussätze
-  - [ ] 5.1 Admin-API: anlegen, bearbeiten, löschen (mit Löschschutz und Rücksetzung betroffener Items), auflisten; Fokussätze hinzufügen, bearbeiten, entfernen
+- [x] 5. Unternehmenswerte und Fokussätze
+  - [x] 5.1 Admin-API: anlegen, bearbeiten, löschen (mit Löschschutz und Rücksetzung betroffener Items), auflisten; Fokussätze hinzufügen, bearbeiten, entfernen
     - _Requirements: 2.1–2.13_
-  - [ ] 5.2 Admin-Oberfläche: Liste mit Leerzustand, Formular mit Fehlermeldungen je Feld, Fokussätze verwalten
+  - [x] 5.2 Admin-Oberfläche: Liste mit Leerzustand, Formular mit Fehlermeldungen je Feld, Fokussätze verwalten
     - _Requirements: 2.1–2.12_
-  - [ ]* 5.3 Tests für Validierung, eindeutige Namen und Löschschutz
+  - [x]* 5.3 Tests für Validierung, eindeutige Namen und Löschschutz
     - _Requirements: 2.2, 2.3, 2.5, 2.9, 2.10, 2.13_
 
-- [ ] 6. Items verwalten
-  - [ ] 6.1 Admin-API: anlegen, bearbeiten (in place bzw. neue Version über `createNewVersion`), löschen, freigeben, deaktivieren, Items je Wert auflisten
+- [x] 6. Items verwalten
+  - [x] 6.1 Admin-API: anlegen, bearbeiten (in place bzw. neue Version über `createNewVersion`), löschen, freigeben, deaktivieren, Items je Wert auflisten
     - Versionsvergabe in einer Transaktion mit Sperre auf `item_family`
     - _Requirements: 5.1–5.23, 5.25–5.28_
-  - [ ] 6.2 Admin-Oberfläche: Item-Liste je Wert mit Status, Formular mit Perspektive, Typ und gewichteten Zuordnungen, Aktionen Freigeben/Deaktivieren/Löschen
+  - [x] 6.2 Admin-Oberfläche: Item-Liste je Wert mit Status, Formular mit Perspektive, Typ und gewichteten Zuordnungen, Aktionen Freigeben/Deaktivieren/Löschen
     - _Requirements: 5.1–5.17, 5.28_
-  - [ ]* 6.3 Tests für Freigabe-Workflow und Versionierung
+  - [x]* 6.3 Tests für Freigabe-Workflow und Versionierung
     - Property 25 sowie Beispieltests „Versionierung“ aus der Teststrategie
     - _Requirements: 5.13–5.15, 5.18–5.23, 5.25–5.27_
 

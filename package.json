@@ -1,0 +1,25 @@
+{
+  "name": "kulturbarometer",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/shared",
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "build": "npm run build -w @kb/shared && npm run build -w @kb/web",
+    "dev:api": "npm run dev -w @kb/api",
+    "dev:web": "npm run dev -w @kb/web",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "prettier": "^3.10.1",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
