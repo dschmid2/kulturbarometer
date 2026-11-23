@@ -40,8 +40,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => data.subscription.unsubscribe();
   }, []);
 
+  /**
+   * Abmelden (1.5): beendet die Sitzung bei Supabase (Token wird ungültig). Ist Supabase nicht
+   * erreichbar, wird die Sitzung zumindest im Browser beendet, damit niemand angemeldet bleibt.
+   */
   const signOut = async () => {
-    await supabase?.auth.signOut();
+    if (!supabase) return;
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (!error) return;
+    } catch {
+      /* Netzwerkfehler: unten lokal abmelden */
+    }
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    setSession(null);
   };
 
   return (

@@ -1,6 +1,7 @@
 import { ROLE_DESCRIPTIONS, ROLE_LABELS, ROLES, type Role } from '@kb/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { Avatar } from '../Avatar';
 import { IconButton } from '../Icons';
 import { ApiError, apiFetch } from '../lib/api';
 import type { Member } from './types';
@@ -151,9 +152,12 @@ function MemberCard({ member, isSelf }: { member: Member; isSelf: boolean }) {
   return (
     <article className="card">
       <header className="card-header">
-        <div>
-          <h2>{member.email}</h2>
-          {isSelf && <span className="muted small">Ihr Konto</span>}
+        <div className="member-head">
+          <Avatar email={member.email} size={40} />
+          <div>
+            <h2>{member.email}</h2>
+            {isSelf && <span className="muted small">Ihr Konto</span>}
+          </div>
         </div>
         <div className="actions">
           {changed && (
