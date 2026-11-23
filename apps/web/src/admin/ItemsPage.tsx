@@ -11,6 +11,7 @@ import {
 } from '@kb/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { IconButton } from '../Icons';
 import { ApiError, apiFetch } from '../lib/api';
 import type { Item, Value } from './types';
 import { FieldError, firstError } from './ValuesPage';
@@ -123,9 +124,6 @@ function ItemCard({ item, onEdit }: { item: Item; onEdit: () => void }) {
           )}
         </div>
         <div className="actions">
-          <button className="secondary small" onClick={onEdit}>
-            {item.used ? 'Neue Version' : 'Bearbeiten'}
-          </button>
           {item.status !== 'FREIGEGEBEN' && (
             <button className="small" onClick={() => action.mutate('approve')}>
               Freigeben
@@ -136,15 +134,19 @@ function ItemCard({ item, onEdit }: { item: Item; onEdit: () => void }) {
               Deaktivieren
             </button>
           )}
+          <IconButton
+            icon="edit"
+            label={item.used ? 'Neue Version anlegen' : 'Item bearbeiten'}
+            onClick={onEdit}
+          />
           {!item.used && (
-            <button
-              className="danger small"
+            <IconButton
+              icon="delete"
+              label="Item löschen"
               onClick={() => {
                 if (confirm('Item wirklich löschen?')) action.mutate('delete');
               }}
-            >
-              Löschen
-            </button>
+            />
           )}
         </div>
       </header>
@@ -278,13 +280,11 @@ function ItemForm({
               aria-label="Gewichtung in Prozent"
             />
             <span>%</span>
-            <button
-              type="button"
-              className="link danger"
+            <IconButton
+              icon="delete"
+              label="Zuordnung entfernen"
               onClick={() => setAssignments((l) => l.filter((_, idx) => idx !== i))}
-            >
-              Entfernen
-            </button>
+            />
           </div>
         ))}
         <button

@@ -622,3 +622,46 @@ legend {
     padding-top: 28px;
   }
 }
+
+/* Symbol-Buttons: Bleistift (bearbeiten) und Papierkorb (löschen) */
+button.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  min-width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--ka-ink-12);
+  background: var(--ka-white);
+  color: var(--ka-ink);
+}
+button.icon-button:hover:not(:disabled) {
+  background: var(--ka-lime);
+  border-color: var(--ka-lime);
+  color: var(--ka-ink);
+}
+button.icon-button.icon-delete {
+  color: var(--ka-danger);
+}
+button.icon-button.icon-delete:hover:not(:disabled) {
+  background: var(--ka-danger);
+  border-color: var(--ka-danger);
+  color: var(--ka-white);
+}
+.sentence .actions {
+  flex-shrink: 0;
+  gap: 6px;
+}
+.sentence .icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  min-height: 32px;
+}
+.sentence .icon-button svg {
+  width: 16px;
+  height: 16px;
+}
