@@ -20,7 +20,7 @@ export function ValuesPage() {
           <h1>Unternehmenswerte</h1>
           <p className="muted">
             Name, Beschreibung und Fokussätze beschreiben, wie sich ein gelebter Wert im Daily
-            Business zeigt. Sie sind die Vorgabe für die Umfrage-Items.
+            Business zeigt. Sie sind die Vorgabe für die Fragen der Umfrage.
           </p>
         </div>
         <button onClick={() => setEditing('new')}>Neuer Wert</button>

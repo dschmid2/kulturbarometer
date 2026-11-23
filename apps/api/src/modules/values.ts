@@ -88,7 +88,7 @@ export async function deleteValue(sql: Sql, id: string): Promise<void> {
       throw new AppError(
         409,
         'VALUE_REFERENCED_BY_USED_ITEM',
-        'Der Unternehmenswert wird von Item-Versionen referenziert, die in einer Kampagne verwendet wurden, und kann nicht gelöscht werden.',
+        'Der Unternehmenswert wird von Fragen referenziert, die in einer Kampagne verwendet wurden, und kann nicht gelöscht werden.',
       );
     }
 

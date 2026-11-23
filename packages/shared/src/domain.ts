@@ -12,9 +12,10 @@ export const PERSPECTIVE_LABELS: Record<Perspective, string> = {
 export const ITEM_TYPES = ['FRAGE', 'SITUATION'] as const;
 export type ItemType = (typeof ITEM_TYPES)[number];
 
+/** In der Oberfläche heißen Items „Fragen"; ihre Art ist „Aussage" oder „Szenario". */
 export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
-  FRAGE: 'Frage',
-  SITUATION: 'Situation/Use-Case',
+  FRAGE: 'Aussage',
+  SITUATION: 'Szenario',
 };
 
 export const ITEM_STATUSES = ['ZUR_PRUEFUNG', 'FREIGEGEBEN', 'DEAKTIVIERT'] as const;

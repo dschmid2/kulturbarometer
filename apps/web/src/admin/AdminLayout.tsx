@@ -40,7 +40,7 @@ function AdminShell() {
         </NavLink>
         <nav>
           <NavLink to="/admin/werte">Werte</NavLink>
-          <NavLink to="/admin/items">Items</NavLink>
+          <NavLink to="/admin/fragen">Fragen</NavLink>
           <NavLink to="/admin/kampagnen">Kampagnen</NavLink>
         </nav>
         <span className="spacer" />
@@ -56,7 +56,8 @@ function AdminShell() {
           <Routes>
             <Route index element={<Navigate to="werte" replace />} />
             <Route path="werte" element={<ValuesPage />} />
-            <Route path="items" element={<ItemsPage />} />
+            <Route path="fragen" element={<ItemsPage />} />
+            <Route path="items" element={<Navigate to="../fragen" replace />} />
             <Route
               path="*"
               element={<p className="muted">Dieser Bereich folgt in den nächsten Aufgaben.</p>}

@@ -17,6 +17,18 @@ export const notFound = (what: string) =>
   new AppError(404, 'NOT_FOUND', `${what} wurde nicht gefunden.`);
 
 /** Fehler aus Datenbank-Triggern haben die Form „CODE: Meldung" (siehe supabase/migrations). */
+/**
+ * Meldungen für Fehlercodes aus Datenbank-Triggern in der Sprache der Oberfläche
+ * (dort heißen Items „Fragen"). Codes ohne Eintrag behalten die Meldung des Triggers.
+ */
+const TRIGGER_MESSAGES: Record<string, string> = {
+  USED_ITEM_IMMUTABLE:
+    'Diese Version der Frage wurde in einer Kampagne verwendet und ist unveränderlich. Beim Bearbeiten entsteht eine neue Version.',
+  USED_ITEM_NOT_DELETABLE:
+    'Diese Version der Frage wurde in einer Kampagne verwendet und kann nicht gelöscht werden.',
+  ITEM_NOT_APPROVED: 'Nur freigegebene Fragen können einer Kampagne zugeordnet werden.',
+};
+
 function fromPostgres(err: {
   code?: string;
   message?: string;
@@ -24,7 +36,7 @@ function fromPostgres(err: {
 }): AppError | null {
   if (err.code === 'P0001' && err.message) {
     const match = /^([A-Z_]+): (.*)$/s.exec(err.message);
-    if (match) return new AppError(409, match[1]!, match[2]!);
+    if (match) return new AppError(409, match[1]!, TRIGGER_MESSAGES[match[1]!] ?? match[2]!);
   }
   if (err.code === '22P02')
     return new AppError(404, 'NOT_FOUND', 'Der Eintrag wurde nicht gefunden.');
