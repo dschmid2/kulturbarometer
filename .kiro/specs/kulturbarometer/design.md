@@ -223,25 +223,27 @@ Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Va
 
 - `chooseMode(campaignId, mode)` – genau ein Verteilmodus je Kampagne (7.1).
 - Modus A „öffentlicher Kampagnen-Link":
-  - `createCampaignLink` – eindeutiger, von früheren Links verschiedener Link (7.2).
-  - `TeilnahmekennungService` – wertet Cookie + lokal erzeugten Code aus; erkennt Wiederteilnahme je Kampagne (7.3, 7.4) als Best-Effort (7.14).
+  - `createOrReplaceCampaignLink(campaignId)` – erzeugt einen eindeutigen, von allen früheren Links verschiedenen Link (7.2). Besitzt die Kampagne bereits einen gültigen Link, wird dieser in **derselben Transaktion** mit `revokedAt = now()` ungültig gemacht (7.15); höchstens ein Link je Kampagne ist gültig (partieller Unique-Index auf `campaignId` mit `revokedAt IS NULL`). Ein ungültig gemachter Link führt zur Meldung „ungültiger Link" (7.13, 7.16).
+  - `TeilnahmekennungService` – wertet Cookie + lokal erzeugten Code aus; erkennt Wiederteilnahme **je Kampagne, unabhängig vom Link** (7.3, 7.4, 7.17) als Best-Effort (7.14). Nach dem Ersetzen des Links bleiben Teilnahmekennungen und gebundene Teilmengen gültig, da sie an die Kampagne und nicht an den Link gebunden sind.
   - `RateLimitHeuristic` – serverseitige, anonyme Begrenzung ungewöhnlich häufiger Übermittlungen je Sitzung/Zeitfenster (7.5, 7.6).
 - Modus B „individuelle Einmal-Links per E-Mail":
   - `issueOneTimeLinks(campaignId, emails[])` – 1 bis 10.000 Adressen, je Adresse ein eindeutiger Einmal-Link; Versand über `MailPort`; **ausschließlich** ein anonymer Einmal-Token wird persistiert, **keine** E-Mail-Adresse (7.7, 7.8).
-  - `validateOneTimeToken` – offen/verbraucht; verbrauchte Links lehnen Zugang ab (7.9, 7.10).
+  - `validateOneTimeToken` – offen/verbraucht; verbrauchte Links lehnen Zugang ab (7.9, 7.10). Das Öffnen verbraucht den Token **nie**; er wird ausschließlich in der Transaktion von `submitAnswer` auf `VERBRAUCHT` gesetzt (7.18). Damit verbrauchen auch automatische Link-Prüfungen von Mail-Sicherheitssystemen keine Token.
 - Gemeinsame Regeln: Zugang nur bei Status „Aktiv"; bei „Entwurf" und „Abgeschlossen" zeigt das System einen einzigen, identischen Hinweis „Umfrage derzeit nicht verfügbar", ohne zwischen den beiden Status zu unterscheiden (7.11); ungültiger Link → Fehlermeldung (7.13).
 - **Kein aktives Item**: Ist die Kampagne `AKTIV`, aber `activeCount = 0`, wird der Zugang mit demselben Hinweis „Umfrage derzeit nicht verfügbar" abgelehnt. Es wird weder ein Einmal-Token verbraucht noch eine Teilnahmekennung als „teilgenommen" gespeichert noch eine Teilmenge gezogen; Einmal-Links bleiben unverbraucht (7.12).
 
 ### SurveyModule – Umfrage beantworten (Anforderung 8)
 
-- `openSurvey(accessContext) -> TeilnehmerTeilmenge` – zieht je Teilnehmer eine zufällige Teilmenge aus den **zum Zeitpunkt des Öffnens aktiven** SnapshotItems (`deactivatedAt IS NULL`) im Umfang `k = min(itemsPerParticipant, activeCount)` (8.1, 6.17, 6.19). Ist `activeCount < itemsPerParticipant`, werden alle aktiven Items gezogen. Die Umfrage rendert ausschließlich `SnapshotItem`-Inhalte (Item-Text, Item-Typ, Perspektive) der Kampagne, nie die aktuellen Quell-Items (5.30, 6.13).
+- `openSurvey(accessContext) -> TeilnehmerTeilmenge` – sucht zuerst eine bestehende `SurveySession` zum Zugangsschlüssel (Einmal-Token bzw. Teilnahmekennung) der Kampagne. **Existiert sie**, wird dieselbe Teilmenge ohne inzwischen deaktivierte Items zurückgegeben; es wird nichts neu gezogen und nichts ersetzt (8.11). Ist kein Item davon mehr aktiv, Hinweis „Umfrage derzeit nicht verfügbar", Token bleibt unverbraucht (8.12). **Existiert sie nicht** (erstes Öffnen), zieht die Operation eine zufällige Teilmenge aus den **zum Zeitpunkt des Öffnens aktiven** SnapshotItems (`deactivatedAt IS NULL`) im Umfang `k = min(itemsPerParticipant, activeCount)` (8.1, 6.17, 6.19). Ist `activeCount < itemsPerParticipant`, werden alle aktiven Items gezogen. Die gezogene Teilmenge wird als `SurveySession` gespeichert. Die Umfrage rendert ausschließlich `SnapshotItem`-Inhalte (Item-Text, Item-Typ, Perspektive) der Kampagne, nie die aktuellen Quell-Items (5.30, 6.13).
 - `submitAnswer(accessContext, ratings[], comments[])` – läuft in einer Transaktion, die `deactivatedAt` der Teilmengen-Items zum Zeitpunkt der Übermittlung liest:
-  - Ratings dürfen nur Items der gezogenen Teilmenge referenzieren; Wertebereich 1,00–5,00 (8.2, 8.4).
+  - Die Teilmenge wird aus der `SurveySession` gelesen, nicht vom Client übernommen. Ratings dürfen nur Items dieser Teilmenge referenzieren; Wertebereich 1,00–5,00 (8.2, 8.4).
   - **Erforderlich** ist eine Bewertung für jedes zum Übermittlungszeitpunkt noch aktive Item der Teilmenge; fehlen welche, wird abgelehnt, bisherige Eingaben bleiben erhalten und die Liste der fehlenden aktiven Items wird angezeigt (8.5).
   - Bewertungen (und Kommentare) zu inzwischen deaktivierten Items werden **angenommen und gespeichert**, aber nicht als erforderlich behandelt und später von Score, Auswertung und Export ausgeschlossen (8.7).
   - Sind **alle** Items der Teilmenge inzwischen deaktiviert, wird die Übermittlung abgelehnt, keine Antwort gespeichert und der einheitliche Hinweis „Umfrage derzeit nicht verfügbar" angezeigt (8.8). Der Einmal-Token bleibt dabei unverbraucht.
   - Speichert Antwort + optionale Kommentare 0–1.000 Zeichen anonym (8.3, 8.6, 8.9); verhindert Mehrfachabgabe (8.10): Sobald eine zweite Übermittlung über denselben Link bzw. dieselbe Teilnahme erkannt wird, wird keine weitere Antwort gespeichert, unabhängig davon, ob die Link-Kennung (Kampagnen-Link bzw. Teilnahmekennung oder Einmal-Link) bei der zweiten Übermittlung gültig oder vorhanden ist.
-- Die gezogene Teilmenge wird an die anonyme Teilnahme (Teilnahmekennung bzw. Einmal-Token) gebunden, damit dieselben Items innerhalb einer Teilnahme stabil bleiben, ohne Personenbezug herzustellen.
+- **Erfolgreiche Übermittlung in einer Transaktion**: (1) `Participation` + `AnswerItem`s anlegen, **ohne** Verweis auf Token, Link, Teilnahmekennung oder `SurveySession` (7.19); (2) Einmal-Token auf `VERBRAUCHT` setzen bzw. Teilnahmekennung als „teilgenommen" markieren (7.18, 8.10); (3) `SurveySession` löschen (8.14). Die Dedup erfolgt ausschließlich über Token-Status bzw. Teilnahmekennung, nicht über eine Verknüpfung zur Antwort.
+- **Zwischenstand nur im Browser** (8.13): Das Frontend speichert erfasste Bewertungen und Kommentare je Kampagne im Local Storage und stellt sie beim erneuten Öffnen im selben Browser wieder her. Der Server speichert vor der Übermittlung keine Bewertungen. Nach erfolgreicher Übermittlung löscht das Frontend den Zwischenstand (8.14). Auf einem anderen Gerät beginnt der Teilnehmer mit derselben Teilmenge, aber ohne Zwischenstand.
+- **Entkopplung über Zeitangaben** (7.19): Token und Teilnahmekennung speichern keinen Verbrauchszeitpunkt; `Participation.submittedAt` wird nur auf den Kalendertag genau gespeichert. Die Reihenfolge für die Zwischenauswertung liefert `submissionSeq`. So lässt sich eine Antwort weder über Zeitstempel noch über Verweise einem Token oder einer Teilnahmekennung zuordnen.
 
 ### ScoringModule – Ist-Score (Anforderung 9)
 
@@ -298,7 +300,8 @@ erDiagram
     PARTICIPATION ||--o{ ANSWER_ITEM : enthaelt
     ANSWER_ITEM }o--|| SNAPSHOT_ITEM : bewertet
 
-    CAMPAIGN ||--o| CAMPAIGN_LINK : "Modus A"
+    CAMPAIGN ||--o{ CAMPAIGN_LINK : "Modus A (max. 1 gültig)"
+    CAMPAIGN ||--o{ SURVEY_SESSION : "offene Teilnahmen"
     CAMPAIGN ||--o{ ONE_TIME_TOKEN : "Modus B"
 ```
 
@@ -341,16 +344,19 @@ Jede Zeile der Tabelle `Item` ist eine **Item-Version**; zusammengehörige Versi
 - „Aktiv" ≙ `deactivatedAt IS NULL`. Snapshot und Antworten bleiben die alleinige Grundlage für Anzeige und Berechnung der Kampagne.
 
 **CampaignLink (Modus A)**
-- `id`, `campaignId`, `linkToken` (eindeutig, zufällig). Öffentlich teilbar (7.2).
+- `id`, `campaignId`, `linkToken` (eindeutig, zufällig), `createdAt`, `revokedAt` (nullable; `NULL` = gültig). Öffentlich teilbar (7.2). Höchstens ein gültiger Link je Kampagne, abgesichert durch einen partiellen Unique-Index `(campaignId) WHERE revokedAt IS NULL` (7.15).
 
 **Teilnahmekennung / RateLimit (Modus A)**
-- Serverseitiger, anonymer Datensatz je Kampagne zur Wiederteilnahme-Erkennung und Rate-Limit-Heuristik. Enthält **keine** personenbezogenen Daten (7.6). Der browserseitige Teil (Cookie + Local-Storage-Code) liegt im Client.
+- `ParticipantMarker`: `id`, `campaignId`, `codeHash` (Hash des im Browser erzeugten Codes), `status` ∈ {`OFFEN`, `TEILGENOMMEN`}; eindeutig je `(campaignId, codeHash)`; **kein** Zeitstempel des Teilnahmezeitpunkts (7.19). Gebunden an die Kampagne, nicht an den Link (7.17). Rate-Limit-Daten werden getrennt und kurzlebig geführt. Beide enthalten **keine** personenbezogenen Daten (7.6). Der browserseitige Teil (Cookie + Local-Storage-Code) liegt im Client.
 
 **OneTimeToken (Modus B)**
-- `id`, `campaignId`, `token` (eindeutig, zufällig), `status` ∈ {`OFFEN`, `VERBRAUCHT`}, `consumedAt`. **Keine** Zuordnung zu einer E-Mail-Adresse; Adresse wird nie gespeichert (7.7, 7.8).
+- `id`, `campaignId`, `token` (eindeutig, zufällig), `status` ∈ {`OFFEN`, `VERBRAUCHT`} (Wechsel nur bei erfolgreicher Übermittlung, 7.18); **kein** Verbrauchszeitpunkt (7.19). **Keine** Zuordnung zu einer E-Mail-Adresse; Adresse wird nie gespeichert (7.7, 7.8).
+
+**SurveySession (offene Teilnahme)**
+- `id`, `campaignId`, `accessKeyHash` (Hash des Einmal-Tokens bzw. der Teilnahmekennung), `drawnSnapshotItemIds[]`; eindeutig je `(campaignId, accessKeyHash)`. Entsteht beim ersten Öffnen (8.1), wird bei jedem erneuten Öffnen wiederverwendet (8.11) und bei erfolgreicher Übermittlung gelöscht (8.14). Enthält **keine** Bewertungen (8.13). Verwaiste Sessions werden beim Abschluss der Kampagne gelöscht.
 
 **Participation (Antwort-Hülle)**
-- `id`, `campaignId`, `submittedAt`, `submissionSeq` (je Kampagne fortlaufende Abgabenummer, eindeutig je `(campaignId, submissionSeq)`; Grundlage der stufenweisen Zwischenauswertung, 10.12), `drawnSnapshotItemIds[]` (die gezogene Teilnehmer-Teilmenge). Enthält **keine** personenbezogenen Identifikationsdaten (8.9). Die Bindung an Teilnahmekennung/Einmal-Token dient nur der Dedup, nicht der Identifikation.
+- `id`, `campaignId`, `submittedAt` (nur Kalendertag, 7.19), `submissionSeq` (je Kampagne fortlaufende Abgabenummer, eindeutig je `(campaignId, submissionSeq)`; Grundlage der stufenweisen Zwischenauswertung, 10.12), `drawnSnapshotItemIds[]` (die gezogene Teilnehmer-Teilmenge). Enthält **keine** personenbezogenen Identifikationsdaten (8.9) und **keinen** Verweis auf Einmal-Token, Kampagnen-Link, Teilnahmekennung oder SurveySession (7.19). Die Dedup erfolgt ausschließlich über `OneTimeToken.status` bzw. `ParticipantMarker.status`.
 
 **AnswerItem (Ist-Bewertung + Kommentar)**
 - `id`, `participationId`, `snapshotItemId`, `rating` (NUMERIC(3,2), 1.00–5.00), `comment` (0–1.000, optional). Anonym (8.9). Bewertungen und Kommentare deaktivierter SnapshotItems bleiben gespeichert (6.18, 8.7), werden aber über den Vorfilter von Score, Auswertung und Export ausgeschlossen.
@@ -456,9 +462,9 @@ Eine Eigenschaft (Property) ist ein Merkmal oder Verhalten, das über alle gült
 
 ### Property 16: Anonymität gespeicherter Antworten
 
-*Für alle* gespeicherten Participation- und AnswerItem-Datensätze SOLL der Inhalt keine personenbezogenen Identifikationsdaten (Name, E-Mail, IP, Benutzerkennung) enthalten.
+*Für alle* gespeicherten Participation- und AnswerItem-Datensätze SOLL der Inhalt keine personenbezogenen Identifikationsdaten (Name, E-Mail, IP, Benutzerkennung) enthalten, keinen Verweis auf Einmal-Token, Kampagnen-Link, Teilnahmekennung oder SurveySession, und *für alle* OneTimeToken- und ParticipantMarker-Datensätze SOLL kein Zeitstempel gespeichert sein, über den sie einer Participation zugeordnet werden können.
 
-**Validates: Requirements 8.9**
+**Validates: Requirements 7.19, 8.9**
 
 ### Property 17: Zulässige Statusübergänge der Kampagne
 
@@ -532,6 +538,18 @@ Eine Eigenschaft (Property) ist ein Merkmal oder Verhalten, das über alle gült
 
 **Validates: Requirements 9.1, 10.12**
 
+### Property 29: Erneutes Öffnen liefert dieselbe Teilmenge, Öffnen verbraucht nichts
+
+*Für alle* Zugangsschlüssel (Einmal-Token bzw. Teilnahmekennung) und *für jede* Folge von Öffnungen vor der erfolgreichen Übermittlung SOLL jede Öffnung die beim ersten Öffnen gezogene Teilmenge abzüglich der inzwischen deaktivierten Items liefern, keine neuen Items hinzufügen, und der Einmal-Token SOLL nach jeder dieser Öffnungen den Status `OFFEN` haben; erst die erfolgreiche Übermittlung SOLL ihn auf `VERBRAUCHT` setzen und die SurveySession entfernen.
+
+**Validates: Requirements 7.18, 8.1, 8.11, 8.12, 8.14**
+
+### Property 30: Höchstens ein gültiger Kampagnen-Link
+
+*Für alle* Kampagnen und *für jede* Folge von Link-Erzeugungen SOLL höchstens ein Kampagnen-Link gültig sein, dieser SOLL der zuletzt erzeugte sein, jeder frühere Link SOLL beim Öffnen als ungültig abgewiesen werden, und eine über einen früheren Link erfasste Teilnahmekennung SOLL auch über den neuen Link als bereits teilgenommen erkannt werden.
+
+**Validates: Requirements 7.2, 7.13, 7.15, 7.16, 7.17**
+
 ## Error Handling
 
 Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein definiertes, für den Nutzer verständliches und datenschutzkonformes Verhalten.
@@ -573,6 +591,8 @@ Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein d
 - **Ungültiger Link/Token** (keiner gespeicherten Kampagne bzw. keinem Token zugeordnet): Fehlermeldung mit Hinweis auf den ungültigen Link (7.13).
 - **Gültiger Link zu nicht aktiver Kampagne** (Status "Entwurf" oder "Abgeschlossen"): Zugang wird abgelehnt; für beide Status wird derselbe Hinweis „Umfrage derzeit nicht verfügbar" angezeigt, ohne zwischen den Status zu unterscheiden (7.11).
 - **Aktive Kampagne ohne aktives Item**: gleicher Hinweis „Umfrage derzeit nicht verfügbar"; Einmal-Link bleibt unverbraucht, keine Teilnahmekennung wird als „teilgenommen" markiert (7.12).
+- **Ersetzter Kampagnen-Link**: Öffnen eines ungültig gemachten Links → Meldung „ungültiger Link" (7.16); bereits erfasste Teilnahmen und offene SurveySessions bleiben erhalten, da sie an die Kampagne gebunden sind (7.15, 7.17).
+- **Erneutes Öffnen vor dem Absenden**: kein Fehler; dieselbe Teilmenge ohne inzwischen deaktivierte Items (8.11). Sind alle deaktiviert → „Umfrage derzeit nicht verfügbar", Token bleibt unverbraucht (8.12).
 - **Verbrauchter Einmal-Link**: Zugang wird abgelehnt, die gespeicherte Antwort bleibt unverändert, Hinweis "bereits teilgenommen" (7.10).
 - **Erkannte Wiederteilnahme (Modus A)**: Zugang wird abgelehnt mit Hinweis "bereits teilgenommen" (7.4), Best-Effort gemäß 7.14.
 
@@ -606,7 +626,7 @@ Die Fehlerbehandlung folgt dem Schichtenmodell und liefert je Fehlerklasse ein d
 
 - **Snapshot-Erzeugung** bei Aktivierung läuft in einer Transaktion (inkl. erneuter Prüfung des Item-Status): entweder vollständiger, konsistenter Snapshot oder keine Zustandsänderung (6.11, 6.13).
 - **Deaktivierung** läuft in einer Transaktion (`deactivatedAt` + Quell-Item-Status).
-- **Antwortübermittlung** läuft transaktional inklusive Dedup-Prüfung (Einmal-Token-Verbrauch bzw. Teilnahmekennung), sodass bei Nebenläufigkeit höchstens eine Participation je Teilnahme entsteht (7.10, 8.10). Die Verhinderung der Mehrfachabgabe greift unabhängig davon, ob die Link-Kennung (Kampagnen-Link bzw. Teilnahmekennung oder Einmal-Link) bei der zweiten Übermittlung gültig oder vorhanden ist, sofern die zweite Übermittlung über denselben Link bzw. dieselbe Teilnahme erkannt wird (8.10).
+- **Antwortübermittlung** läuft transaktional inklusive Dedup-Prüfung (Einmal-Token-Verbrauch bzw. Teilnahmekennung) und Löschen der SurveySession, sodass bei Nebenläufigkeit höchstens eine Participation je Teilnahme entsteht (7.10, 8.10). Die Verhinderung der Mehrfachabgabe greift unabhängig davon, ob die Link-Kennung (Kampagnen-Link bzw. Teilnahmekennung oder Einmal-Link) bei der zweiten Übermittlung gültig oder vorhanden ist, sofern die zweite Übermittlung über denselben Link bzw. dieselbe Teilnahme erkannt wird (8.10).
 - Wiederholtes Konsumieren eines bereits verbrauchten Tokens ist idempotent abgewiesen (keine zusätzliche Wirkung).
 
 ## Testing Strategy
@@ -620,12 +640,13 @@ Es wird ein mehrschichtiger, überwiegend automatisierter Testansatz verfolgt, d
 - **Import/Export**: Beispieltests für Export ohne Werte, ungültiges JSON, Datei über Größenlimit, Top-Level-Schemaverletzung, unbekannter Wertname, doppelte Zuordnung, gemischte Dateien mit Importbericht (Position/Grund/Anzahlen), Konsistenz des exportierten JSON Schemas mit dem Zod-Schema, Unschädlichkeit von Schlüsseln wie `__proto__`.
 - **Freigabe-Workflow**: Beispieltests für Freigabe gültiger/ungültiger Items, Bearbeiten freigegebener Items (→ `ZUR_PRUEFUNG`), Zuordnung nicht freigegebener Items zum Pool, Aktivierung mit nachträglich geändertem Pool-Item.
 - **Anonymitätsschwelle und Zwischenauswertung**: Beispieltests für Schwelle nicht erreicht/genau erreicht, Zellen und Kommentarabschnitte knapp unter/über der Schwelle, Stufenberechnung `⌊n/t⌋×t` (z. B. t = 5, n = 4, 5, 9, 10), leere CSV-Felder und abgelehnter Export unter der Schwelle, Unveränderlichkeit der Schwelle nach Aktivierung, Sortierung von Werten ohne angezeigten Score „Selbst", Verlauf mit Lücken; Prüfung, dass unterdrückte Werte nicht in der API-Antwort enthalten sind.
+- **Teilnahme-Ablauf**: Beispieltests für erneutes Öffnen (gleiche Teilmenge, keine Neuziehung), Deaktivierung zwischen zwei Öffnungen, Öffnen ohne Verbrauch des Tokens (auch mehrfach), Verbrauch nur bei erfolgreicher Übermittlung, abgelehnte Übermittlung ohne Verbrauch, Ersetzen des Kampagnen-Links (alter Link ungültig, Teilnahmekennung bleibt wirksam), Wiederherstellen und Löschen des Zwischenstands im Browser; Prüfung, dass Participation keine Verweise auf Token/Link/Kennung enthält und Token/Kennung keine Zeitstempel tragen.
 - **Versionierung**: Beispieltests für Bearbeiten/Verfeinern nicht verwendeter Versionen (in place) und verwendeter Versionen (neue Version mit nächsthöherer Versionsnummer, Vorgänger unverändert), Ablehnung von In-place-Änderungen und Löschung verwendeter Versionen (Domain-Guard und DB-Trigger), Setzen von `usedAt` bei Aktivierung (nicht bei Entwurfs-Pools), unveränderte Wiederfreigabe deaktivierter verwendeter Versionen, `listFamilyVersions`, `takeOverPool` mit nicht mehr freigegebenen Versionen sowie parallele `createNewVersion`-Aufrufe derselben Familie.
 - **Deaktivierungs-Flows**: Beispieltests für Deaktivierung in Status Aktiv/Entwurf/Abgeschlossen, Setzen von `deactivatedAt` und Quell-Item-Status, Isolation anderer Kampagnen, Warn-/Bestätigungsablauf beim letzten aktiven Item, Hinweis bei verringerter Teilmenge, Ablehnung von Reaktivierung, Wiederverwendung eines überarbeiteten Items nur in später aktivierten Kampagnen.
 
 ### Property-Based Tests (fast-check)
 
-- Die unter "Correctness Properties" definierten Eigenschaften (Property 1–28) werden je als **ein** fast-check-Property-Test implementiert, mit mindestens **100 Iterationen** je Test.
+- Die unter "Correctness Properties" definierten Eigenschaften (Property 1–30) werden je als **ein** fast-check-Property-Test implementiert, mit mindestens **100 Iterationen** je Test.
 - Schwerpunkt auf der Ist-Score-Mathematik (Wertebereich, Homogenität, Neutralität von Gewicht 0, Idempotenz der Rundung, Perspektiven-Unabhängigkeit, monotone Schranken), der Teilmengen-Ziehung (Größe `min(n, aktive)`, Pool-/Aktivzugehörigkeit, Duplikatfreiheit), der Snapshot-Unveränderlichkeit samt Deaktivierung als einziger Mutation, dem Ausschluss deaktivierter Items in Score/Auswertung/CSV und dem Import-Round-Trip (Generatoren erzeugen Werte, gültige und ungültige Items sowie zufällig deaktivierte Item-Mengen und Abgabezeitpunkte).
 - Jeder Property-Test trägt einen Verweis auf die zugehörige Design-Eigenschaft im Format: **Feature: kulturbarometer, Property {Nummer}: {Property-Text}**.
 
