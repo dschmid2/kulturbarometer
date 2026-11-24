@@ -9,6 +9,7 @@ const shown = (istScore: number, stdDev = 0.5): PerspectiveCell => ({
   distribution: {
     classCounts: [0, 0, 5, 0, 0],
     classShares: [0, 0, 100, 0, 0],
+    histogram: [0, 0, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
     median: istScore,
     stdDev,
   },

@@ -201,3 +201,22 @@ describe('Auswertung mit Schwelle (Beispiele)', () => {
     });
   });
 });
+
+describe('Feinverteilung (Grafik)', () => {
+  it('ordnet Scores Intervallen à 0,20 zu, deckungsgleich mit den Klassengrenzen', async () => {
+    const { histogramBinOf, distributionClassOf } = await import('./scoring.js');
+    expect(histogramBinOf(1)).toBe(0);
+    expect(histogramBinOf(1.19)).toBe(0);
+    expect(histogramBinOf(1.2)).toBe(1);
+    expect(histogramBinOf(1.79)).toBe(3);
+    expect(histogramBinOf(1.8)).toBe(4);
+    expect(histogramBinOf(4.2)).toBe(16);
+    expect(histogramBinOf(4.99)).toBe(19);
+    expect(histogramBinOf(5)).toBe(19);
+    // Rundungsfehler wie 1,7999… landen wie bei den Klassen im richtigen Intervall
+    expect(histogramBinOf(1.7999999)).toBe(4);
+    for (const s of [1, 1.79, 1.8, 2.59, 2.6, 3.39, 3.4, 4.19, 4.2, 5]) {
+      expect(Math.floor(histogramBinOf(s) / 4)).toBe(distributionClassOf(s));
+    }
+  });
+});
