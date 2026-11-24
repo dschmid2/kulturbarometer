@@ -16,7 +16,7 @@ export class AppError extends Error {
 export const notFound = (what: string) =>
   new AppError(404, 'NOT_FOUND', `${what} wurde nicht gefunden.`);
 
-/** Fehler aus Datenbank-Triggern haben die Form „CODE: Meldung" (siehe supabase/migrations). */
+/** Fehler aus Datenbank-Triggern haben die Form „CODE: Meldung" (siehe db/migrations). */
 /**
  * Meldungen für Fehlercodes aus Datenbank-Triggern in der Sprache der Oberfläche
  * (dort heißen Items „Fragen"). Codes ohne Eintrag behalten die Meldung des Triggers.

@@ -6,60 +6,11 @@ import {
   ROLES,
   type Role,
 } from '@kb/shared';
-import { createClient } from '@supabase/supabase-js';
 import { Router } from 'express';
 import { orgId, requirePlatformAdmin, requireRole, type Identity } from '../auth/guard.js';
+import type { UserDirectory } from '../auth/provider.js';
 import type { Sql } from '../db/client.js';
 import { AppError, notFound } from '../http/errors.js';
-
-// ---------------------------------------------------------------------------
-// Benutzerverzeichnis (Supabase Auth)
-// ---------------------------------------------------------------------------
-
-export interface DirectoryUser {
-  id: string;
-  email: string;
-}
-
-/** Zugriff auf die Benutzerkonten; in Tests durch eine Attrappe ersetzt. */
-export interface UserDirectory {
-  findByEmail(email: string): Promise<DirectoryUser | null>;
-  /** Lädt ein neues Konto per E-Mail ein; `null`, wenn Einladungen nicht konfiguriert sind. */
-  invite(email: string, redirectTo?: string): Promise<DirectoryUser | null>;
-}
-
-/**
- * Standard-Verzeichnis: Konten werden in `auth.users` nachgeschlagen (direkte Datenbankverbindung).
- * Einladungen laufen über die Supabase-Admin-API und benötigen `SUPABASE_SECRET_KEY`.
- */
-export function supabaseUserDirectory(sql: () => Sql): UserDirectory {
-  return {
-    async findByEmail(email) {
-      const [row] = await sql()<DirectoryUser[]>`
-        select id, email from auth.users where lower(email) = lower(${email}) limit 1`;
-      return row ?? null;
-    },
-    async invite(email, redirectTo) {
-      const url = process.env.SUPABASE_URL;
-      const secret = process.env.SUPABASE_SECRET_KEY;
-      if (!url || !secret) return null;
-      const admin = createClient(url, secret, {
-        auth: { persistSession: false, autoRefreshToken: false },
-      });
-      const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-        ...(redirectTo ? { redirectTo } : {}),
-      });
-      if (error || !data.user) {
-        throw new AppError(
-          502,
-          'INVITE_FAILED',
-          `Die Einladung konnte nicht versendet werden: ${error?.message ?? 'unbekannter Fehler'}`,
-        );
-      }
-      return { id: data.user.id, email: data.user.email ?? email };
-    },
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Wer bin ich?

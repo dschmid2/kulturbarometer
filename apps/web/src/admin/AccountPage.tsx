@@ -1,17 +1,16 @@
 import { PASSWORD_MAX, PASSWORD_MIN, validatePasswordChange } from '@kb/shared';
 import { useState, type FormEvent } from 'react';
-import { SET_PASSWORD_FLAG, supabase } from '../lib/supabase';
+import { auth, SET_PASSWORD_FLAG, type AuthErrorCode } from '../lib/auth';
 import { useAuth } from './auth';
 
-/** Übersetzt Fehler von Supabase Auth in verständliche Meldungen. */
-function authMessage(err: { code?: string; message: string }): string {
-  switch (err.code) {
+/** Übersetzt die vereinheitlichten Fehlercodes des Anmeldedienstes in verständliche Meldungen. */
+function authMessage(code: AuthErrorCode): string {
+  switch (code) {
     case 'weak_password':
       return 'Das Passwort ist zu schwach. Verwenden Sie ein längeres Passwort mit Buchstaben, Ziffern und Sonderzeichen.';
     case 'same_password':
       return 'Das neue Passwort muss sich vom bisherigen unterscheiden.';
-    case 'over_request_rate_limit':
-    case 'over_email_send_rate_limit':
+    case 'rate_limited':
       return 'Zu viele Versuche. Bitte warten Sie einen Moment und versuchen Sie es erneut.';
     default:
       return 'Das Passwort konnte nicht geändert werden. Bitte versuchen Sie es erneut.';
@@ -35,24 +34,26 @@ export function AccountPage() {
     setMessage(null);
     const found = validatePasswordChange({ current: setNew ? null : current, next, repeat });
     setErrors(found);
-    if (Object.keys(found).length > 0 || !supabase) return;
+    if (Object.keys(found).length > 0 || !auth) return;
     setBusy(true);
     try {
       if (!setNew) {
         // Aktuelles Passwort bestätigen (frische Anmeldung), bevor es geändert wird.
-        const { error } = await supabase.auth.signInWithPassword({ email, password: current });
-        if (error) {
-          setErrors({ current: 'Das aktuelle Passwort ist falsch.' });
+        const check = await auth.signIn(email, current);
+        if (!check.ok) {
+          if (check.code === 'rate_limited')
+            setMessage({ ok: false, text: authMessage(check.code) });
+          else setErrors({ current: 'Das aktuelle Passwort ist falsch.' });
           return;
         }
       }
-      const { error } = await supabase.auth.updateUser({ password: next });
-      if (error) {
-        setMessage({ ok: false, text: authMessage(error) });
+      const update = await auth.updatePassword(next);
+      if (!update.ok) {
+        setMessage({ ok: false, text: authMessage(update.code) });
         return;
       }
       // Andere Sitzungen (andere Geräte) beenden; diese bleibt angemeldet.
-      await supabase.auth.signOut({ scope: 'others' }).catch(() => undefined);
+      await auth.signOut('others');
       sessionStorage.removeItem(SET_PASSWORD_FLAG);
       setSetNew(null);
       setCurrent('');
