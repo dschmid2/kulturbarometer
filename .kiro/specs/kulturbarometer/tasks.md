@@ -114,14 +114,14 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
   - [ ] 8.3 Echter LLM-Adapter, sobald ein API-Zugang vorliegt
     - _Requirements: 3.1, 3.3_
 
-- [ ] 9. Kampagnen
-  - [ ] 9.1 Admin-API: anlegen, Pool zuordnen (nur freigegebene Items), Item-Anzahl je Teilnehmer und Anonymitätsschwelle setzen, abgeleitete Werte anzeigen
+- [x] 9. Kampagnen
+  - [x] 9.1 Admin-API: anlegen, Pool zuordnen (nur freigegebene Items), Item-Anzahl je Teilnehmer und Anonymitätsschwelle setzen, abgeleitete Werte anzeigen
     - _Requirements: 6.1–6.6, 6.28, 6.29_
-  - [ ] 9.2 Aktivierung in einer Transaktion: Prüfungen, Snapshot erzeugen, `used_at` setzen; Abschließen; Statusmaschine
+  - [x] 9.2 Aktivierung in einer Transaktion: Prüfungen, Snapshot erzeugen, `used_at` setzen; Abschließen; Statusmaschine
     - _Requirements: 6.9–6.14, 6.25–6.27, 6.30_
-  - [ ] 9.3 Admin-Oberfläche: Kampagnenliste, Entwurf bearbeiten, Pool auswählen, aktivieren, abschließen
+  - [x] 9.3 Admin-Oberfläche: Kampagnenliste, Entwurf bearbeiten, Pool auswählen, aktivieren, abschließen
     - _Requirements: 6.1–6.12, 6.25_
-  - [ ]* 9.4 Property-Tests für Statusübergänge, Pool und Snapshot
+  - [x]* 9.4 Property-Tests für Statusübergänge, Pool und Snapshot
     - Properties 12, 17 und 19
     - _Requirements: 6.4, 6.5, 6.11–6.14, 6.26_
 

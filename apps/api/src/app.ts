@@ -3,6 +3,7 @@ import express, { Router } from 'express';
 import { authGuard, orgContext, supabaseVerifyToken, type VerifyToken } from './auth/guard.js';
 import { db, type Sql } from './db/client.js';
 import { errorHandler } from './http/errors.js';
+import { campaignsRouter } from './modules/campaigns.js';
 import { itemsRouter } from './modules/items.js';
 import {
   accountRouter,
@@ -61,6 +62,7 @@ export function createApp(options: AppOptions = {}) {
   scoped.use(orgContext(sql));
   scoped.use(valuesRouter(sql));
   scoped.use(itemsRouter(sql));
+  scoped.use(campaignsRouter(sql));
   scoped.use(membersRouter(sql, lazyDirectory));
   admin.use(scoped);
   app.use('/api/admin', admin);

@@ -881,3 +881,126 @@ button.user-menu-button[aria-expanded='true'] {
   align-items: center;
   gap: 14px;
 }
+
+/* Kampagnen */
+a.card-link {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  transition: box-shadow 0.15s;
+}
+a.card-link:hover {
+  box-shadow:
+    0 0 0 2px var(--ka-lime),
+    var(--shadow-card);
+}
+.badge.campaign-ENTWURF {
+  background: var(--ka-orange-14);
+  color: #b4441f;
+}
+.badge.campaign-AKTIV {
+  background: var(--ka-lime);
+  color: var(--ka-ink);
+}
+.badge.campaign-ABGESCHLOSSEN {
+  background: var(--ka-ink);
+  color: var(--ka-white);
+}
+.coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+}
+.coverage-table th,
+.coverage-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--ka-ink-06);
+  text-align: center;
+}
+.coverage-table th[scope='row'],
+.coverage-table thead th:first-child {
+  text-align: left;
+}
+.coverage-table td {
+  font-family: var(--font-heading);
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.coverage-table td.coverage-empty {
+  color: var(--ka-danger);
+  background: rgba(200, 55, 26, 0.06);
+}
+.pool-bar {
+  padding: 10px 0;
+  border-top: 1px solid var(--ka-ink-06);
+  border-bottom: 1px solid var(--ka-ink-06);
+  margin-bottom: 8px;
+}
+.pool-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 560px;
+  overflow-y: auto;
+}
+.pool-list li {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--ka-ink-06);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pool-list li.pool-selected {
+  background: var(--ka-lime-35);
+}
+.pool-list label.check {
+  align-items: flex-start;
+  font-weight: 400;
+}
+.pool-list label.check > span {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pool-list .badges {
+  align-items: center;
+}
+.pool-text {
+  font-weight: 500;
+}
+.checklist {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 16px;
+  display: grid;
+  gap: 6px;
+}
+.checklist li::before {
+  display: inline-block;
+  width: 22px;
+  font-weight: 700;
+}
+.checklist li.ok::before {
+  content: '✓';
+  color: #2e8b57;
+}
+.checklist li.open::before {
+  content: '○';
+  color: var(--ka-ink-60);
+}
+.checklist li.open {
+  color: var(--ka-ink-60);
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 24px;
+  margin: 12px 0 16px;
+}
+.facts dt {
+  color: var(--ka-ink-60);
+}
+.facts dd {
+  margin: 0;
+  font-weight: 600;
+}
