@@ -104,6 +104,14 @@ Die Anwendung ist nicht an einen Postgres-Anbieter gebunden:
 - **Neon Auth:** Der Browser spricht Neon Auth über `/api/auth/*` unseres Backends an; das Backend reicht die Anfragen an Neon weiter (`@neon/auth/server`). So liegen die Sitzungs-Cookies auf der eigenen Domain (keine Drittanbieter-Cookies, auch Safari). Das Backend prüft das JWT aus `getSession()` gegen den JWKS-Endpunkt von Neon. Einladungs- und Wiederherstellungslinks führen mit `?token=…` zurück; die Seite „Passwort festlegen“ löst den Token ein.
 - **Berechtigungen:** Plattform-Administratoren (`platform_admin`), Mitgliedschaften und Rollen liegen in der eigenen Datenbank; Benutzer-IDs werden als Text gespeichert, weil Anmeldedienste unterschiedliche ID-Formate verwenden.
 
+**Daten zu einem anderen Anbieter kopieren** (so beim Wechsel Supabase → Neon erprobt):
+
+1. Schema in der Zieldatenbank mit `npm run db:migrate` anlegen.
+2. In der Quelle eine temporäre Rolle anlegen: nur `SELECT` auf die Wertebarometer-Tabellen, `BYPASSRLS`, mit Ablaufdatum.
+3. In der Zieldatenbank `postgres_fdw` einrichten und die Quell-Tabellen in ein Hilfsschema importieren (`import foreign schema … limit to (…)`).
+4. In einer Transaktion kopieren. Reihenfolge nach Fremdschlüsseln. Die Schutz-Trigger nur dabei mit `alter table … disable trigger user` aussetzen und danach wieder einschalten. Mitgliedschaften und `platform_admin` über die E-Mail-Adresse den Konten des neuen Anmeldedienstes zuordnen.
+5. Zeilenzahlen und Prüfsummen je Tabelle vergleichen, danach Hilfsschema, Fremdserver und temporäre Rolle entfernen.
+
 Einen Plattform-Administrator ernennen (direkt in der Datenbank):
 
 ```sql
