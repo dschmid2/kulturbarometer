@@ -40,7 +40,7 @@ TEST_DATABASE_URL=postgres://postgres@localhost:5432/kb_it npm test -w @kb/api
 
 ## Unternehmungen, Benutzer und Rollen
 
-Das Wertebarometer ist mandantenfähig. Werte, Fragen und Kampagnen gehören jeweils einer **Unternehmung**; jede Unternehmung sieht nur ihre eigenen Daten. Benutzer melden sich über Supabase Auth an und haben je Unternehmung eine oder mehrere Rollen:
+Das Wertebarometer ist mandantenfähig. Werte, Fragen und Kampagnen gehören jeweils einer **Unternehmung**; jede Unternehmung sieht nur ihre eigenen Daten. Benutzer melden sich über den Anmeldedienst (aktuell Neon Auth) an und haben je Unternehmung eine oder mehrere Rollen:
 
 | Rolle | Darf |
 | --- | --- |
@@ -52,24 +52,25 @@ Darüber steht der **Plattform-Administrator**: Er legt Unternehmungen an, benen
 
 ### Ersten Plattform-Administrator einrichten
 
-1. Beim Anmeldedienst ein Konto anlegen (Supabase: Dashboard → Authentication → Users → „Add user“, E-Mail und Passwort).
+1. Beim Anmeldedienst ein Konto anlegen. Bei Neon: Konsole → Auth → Users → „Add user“; das Passwort setzt die Person danach selbst über „Passwort vergessen?“ auf der Anmeldeseite. Bei Supabase: Dashboard → Authentication → Users → „Add user“.
 2. Plattform-Admin-Recht in der eigenen Datenbank setzen (SQL-Editor des Datenbank-Anbieters):
 
    ```sql
    insert into platform_admin (user_id, email)
-   select id::text, email from auth.users where email = 'admin@example.org';  -- Supabase
+   select id::text, email from neon_auth."user" where email = 'admin@example.org';  -- Neon
+   -- Supabase: … from auth.users where email = …
    ```
 
    Bei anderen Anmeldediensten die Benutzer-ID direkt eintragen (siehe „Datenbank und Anbieterwechsel“).
 
 3. Im Wertebarometer unter **Unternehmungen** die erste Unternehmung anlegen und unter **Benutzer** weitere Personen mit ihren Rollen zuordnen.
-4. Empfohlen: unter Authentication → Sign In / Providers die Selbstregistrierung („Allow new users to sign up") ausschalten. Neue Personen kommen dann nur über eine Einladung oder das Supabase-Dashboard dazu.
+4. Die Selbstregistrierung beim Anmeldedienst ausschalten (Neon: Auth → Email and password → Sign-up deaktivieren; ist hier bereits so eingestellt). Neue Personen kommen dann nur über eine Einladung dazu.
 
 ### Benutzer hinzufügen
 
-Unter **Benutzer** ordnet eine Person mit der Rolle Benutzer-Administration andere per E-Mail-Adresse zu. Gibt es zu der Adresse schon ein Konto, wird es direkt zugeordnet. Andernfalls verschickt das Wertebarometer eine Einladung per E-Mail, sofern `SUPABASE_SECRET_KEY` gesetzt ist; ohne diesen Schlüssel muss das Konto zuerst im Supabase-Dashboard angelegt werden. Mindestens eine Person pro Unternehmung behält immer die Rolle Benutzer-Administration.
+Unter **Benutzer** ordnet eine Person mit der Rolle Benutzer-Administration andere per E-Mail-Adresse zu. Gibt es zu der Adresse schon ein Konto, wird es direkt zugeordnet. Andernfalls lädt das Wertebarometer die Person per E-Mail ein, sofern Einladungen konfiguriert sind (Neon: `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_BRANCH_ID`; Supabase: `SUPABASE_SECRET_KEY`); sonst muss das Konto zuerst beim Anmeldedienst angelegt werden. Mindestens eine Person pro Unternehmung behält immer die Rolle Benutzer-Administration.
 
-Eingeladene Personen landen nach dem Klick auf den Einladungslink direkt bei **Passwort festlegen**. Angemeldete Benutzer ändern ihr Passwort im Benutzermenü unter **Passwort ändern**; dabei wird das aktuelle Passwort bestätigt und andere angemeldete Geräte werden abgemeldet. Die Mindestlänge in Supabase (Authentication → Providers → Email → Minimum password length) sollte höchstens 8 betragen, damit sie zur Prüfung in der Oberfläche passt.
+Eingeladene Personen landen nach dem Klick auf den Einladungslink direkt bei **Passwort festlegen**. Angemeldete Benutzer ändern ihr Passwort im Benutzermenü unter **Passwort ändern**; dabei wird das aktuelle Passwort bestätigt und andere angemeldete Geräte werden abgemeldet. Die Mindestlänge beim Anmeldedienst sollte höchstens 8 Zeichen betragen, damit sie zur Prüfung in der Oberfläche passt (Neon/Better Auth: 8).
 
 ## Umgebungsvariablen
 
