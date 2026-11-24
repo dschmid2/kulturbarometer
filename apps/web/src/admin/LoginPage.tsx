@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { BrandMark, Wordmark } from '../BrandMark';
-import { supabase } from '../lib/supabase';
+import { auth, authConfigError } from '../lib/auth';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
@@ -12,15 +12,12 @@ export function LoginPage() {
   });
   const [busy, setBusy] = useState(false);
 
-  if (!supabase) {
+  if (!auth) {
     return (
       <main className="page narrow">
         <BrandMark size={40} />
         <h1>Wertebarometer</h1>
-        <p className="error">
-          Die Anmeldung ist nicht konfiguriert (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY
-          fehlen).
-        </p>
+        <p className="error">{authConfigError}</p>
       </main>
     );
   }
@@ -29,10 +26,16 @@ export function LoginPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const { error: err } = await supabase!.auth.signInWithPassword({ email, password });
+    const res = await auth!.signIn(email, password);
     setBusy(false);
     // Generische Meldung ohne Angabe, welches Feld falsch war (1.2).
-    if (err) setError('Die Anmeldedaten sind ungültig.');
+    if (!res.ok) {
+      setError(
+        res.code === 'rate_limited'
+          ? 'Zu viele Anmeldeversuche. Bitte warten Sie einen Moment.'
+          : 'Die Anmeldedaten sind ungültig.',
+      );
+    }
   };
 
   return (

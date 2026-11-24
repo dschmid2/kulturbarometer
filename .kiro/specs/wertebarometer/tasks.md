@@ -179,6 +179,13 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
   - [x]* 14.5 Integrationstests für Trennung der Unternehmungen, Rollen und Benutzerverwaltung (Properties 33 und 34)
     - _Requirements: 12.1–12.10_
 
+- [ ] 15. Anbieterunabhängige Datenbank und Anmeldung (Wechsel zu Neon)
+  - [x] 15.1 Phase 0: Migrationen in `db/migrations` mit eigenem Runner (`schema_migrations`, Baseline); Plattform-Administratoren in `platform_admin`; Benutzer-IDs als Text; Anmeldung hinter `AuthProvider` (Backend) und `AuthClient` (Frontend), Supabase als erste Umsetzung; Produktion auf Supabase umgestellt
+  - [ ] 15.2 Phase 1: Neon-Projekt (Frankfurt) mit Managed Better Auth, Migrationen einspielen, Vercel-Region `fra1`
+  - [ ] 15.3 Phase 2: `AuthProvider`/`AuthClient` für Neon Auth (Better Auth), inkl. Einladung und Passwort festlegen; Test in einer Vorschau-Umgebung
+  - [ ] 15.4 Phase 3: Daten von Supabase nach Neon kopieren, Mitgliedschaften und Plattform-Administratoren über die E-Mail-Adresse den neuen Konten zuordnen
+  - [ ] 15.5 Phase 4: Produktion umschalten (`DATABASE_URL`, `AUTH_PROVIDER`), Supabase als Rückfallebene behalten, danach Wertebarometer-Daten aus Supabase entfernen
+
 ## Nach dem Prototyp
 
 Diese Anforderungen sind im Design beschrieben, aber nicht Teil des ersten Prototyps:
@@ -190,5 +197,4 @@ Diese Anforderungen sind im Design beschrieben, aber nicht Teil des ersten Proto
 - Items in einer laufenden Kampagne deaktivieren (6.15–6.23), inkl. Anzeige deaktivierter Items in der Auswertung
 - Einmal-Links per E-Mail mit `MailPort` (7.7–7.10, 7.18)
 - Begrenzung ungewöhnlich häufiger Übermittlungen (7.5)
-- Verlauf über mehrere Kampagnen (10.4, 10.5, 10.15, 10.20)
 - CSV-Export (Anforderung 11)

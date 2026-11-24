@@ -4,7 +4,7 @@ import { useEffect, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Wordmark } from '../BrandMark';
 import { apiFetch } from '../lib/api';
-import { SET_PASSWORD_FLAG } from '../lib/supabase';
+import { SET_PASSWORD_FLAG } from '../lib/auth';
 import { AccountPage } from './AccountPage';
 import { AuthProvider, useAuth } from './auth';
 import { CampaignDetailPage } from './CampaignDetailPage';

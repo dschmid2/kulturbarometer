@@ -11,7 +11,7 @@ Spezifikation: `.kiro/specs/wertebarometer/` (Anforderungen, Design, Umsetzungsp
 | `apps/web` | React-19-Frontend (Vite) für Administration (`/admin`) und Teilnahme (`/umfrage/:link`) |
 | `apps/api` | Express-Backend; auf Vercel als Function unter `/api` (`api/index.ts`) |
 | `packages/shared` | Gemeinsame Typen, Zod-Schemata und Fachlogik (Ist-Score, Verteilung, Anonymitätsschwelle) |
-| `supabase/migrations` | Datenbankschema als SQL-Migrationen |
+| `db/migrations` | Datenbankschema als SQL-Migrationen (reines PostgreSQL) |
 
 ## Lokale Entwicklung
 
@@ -52,14 +52,15 @@ Darüber steht der **Plattform-Administrator**: Er legt Unternehmungen an, benen
 
 ### Ersten Plattform-Administrator einrichten
 
-1. Supabase-Dashboard → Authentication → Users → „Add user" (E-Mail und Passwort).
-2. Plattform-Admin-Recht setzen (SQL-Editor im Supabase-Dashboard):
+1. Beim Anmeldedienst ein Konto anlegen (Supabase: Dashboard → Authentication → Users → „Add user“, E-Mail und Passwort).
+2. Plattform-Admin-Recht in der eigenen Datenbank setzen (SQL-Editor des Datenbank-Anbieters):
 
    ```sql
-   update auth.users
-   set raw_app_meta_data = raw_app_meta_data || '{"kb_role": "admin"}'
-   where email = 'admin@example.org';
+   insert into platform_admin (user_id, email)
+   select id::text, email from auth.users where email = 'admin@example.org';  -- Supabase
    ```
+
+   Bei anderen Anmeldediensten die Benutzer-ID direkt eintragen (siehe „Datenbank und Anbieterwechsel“).
 
 3. Im Wertebarometer unter **Unternehmungen** die erste Unternehmung anlegen und unter **Benutzer** weitere Personen mit ihren Rollen zuordnen.
 4. Empfohlen: unter Authentication → Sign In / Providers die Selbstregistrierung („Allow new users to sign up") ausschalten. Neue Personen kommen dann nur über eine Einladung oder das Supabase-Dashboard dazu.
@@ -74,13 +75,33 @@ Eingeladene Personen landen nach dem Klick auf den Einladungslink direkt bei **P
 
 | Variable | Verwendung |
 | --- | --- |
-| `DATABASE_URL` | Postgres-Verbindung des Backends. Auf Vercel: Supabase Connection Pooler im Transaktionsmodus (Port 6543). **Geheim**, nur in Vercel bzw. lokal in `.env`. |
-| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` | Prüfung der Zugriffstokens im Backend |
-| `SUPABASE_SECRET_KEY` | Optional. Ermöglicht Einladungen neuer Benutzer per E-Mail. **Geheim**, nur im Backend (Vercel bzw. `.env`). |
-| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Anmeldung im Frontend |
+| `DATABASE_URL` | Postgres-Verbindung des Backends, bei jedem Anbieter. Auf Vercel ein Verbindungs-Pooler im Transaktionsmodus (z. B. Supabase Port 6543 oder Neon „pooled connection“). **Geheim**, nur in Vercel bzw. lokal in `.env`. |
+| `AUTH_PROVIDER`, `VITE_AUTH_PROVIDER` | Anmeldedienst im Backend bzw. Frontend; derzeit `supabase` (Standard). |
+| `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` | Nur mit `AUTH_PROVIDER=supabase`: Prüfung der Zugriffstokens im Backend |
+| `SUPABASE_SECRET_KEY` | Nur mit `AUTH_PROVIDER=supabase`, optional: Einladungen neuer Benutzer per E-Mail. **Geheim**, nur im Backend (Vercel bzw. `.env`). |
+| `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Nur mit `VITE_AUTH_PROVIDER=supabase`: Anmeldung im Frontend |
 
 ## Deployment
 
 Das Vercel-Projekt `wertebarometer` ist mit diesem Repository verbunden; Produktion unter https://wertebarometer.vercel.app (die frühere Adresse https://kulturbarometer.vercel.app bleibt erreichbar). Jeder Push erzeugt ein Deployment; `main` ist die Produktion, andere Branches erzeugen Vorschau-Deployments. Build-Einstellungen stehen in `vercel.json`.
 
-Datenbankänderungen werden als neue Datei in `supabase/migrations` angelegt und auf das Supabase-Projekt angewendet.
+## Datenbank und Anbieterwechsel
+
+Die Anwendung ist nicht an einen Postgres-Anbieter gebunden:
+
+- **Schema:** Migrationen sind reines PostgreSQL in `db/migrations` (Dateiname `JJJJMMTTHHMMSS_name.sql`). Der eigene Runner führt fehlende Migrationen aus und vermerkt sie in `schema_migrations`:
+
+  ```bash
+  DATABASE_URL=… npm run db:migrate
+  ```
+
+  Für eine Datenbank, deren Schema schon besteht, markiert `npm run db:migrate -- --baseline <version>` die Migrationen bis zu dieser Version nur als angewendet.
+- **Datenzugriff:** ausschliesslich über `DATABASE_URL` (postgres.js, `prepare: false`, damit auch Pooler im Transaktionsmodus funktionieren). Für Migrationen besser eine direkte, nicht gepoolte Verbindung verwenden.
+- **Anmeldung:** hinter einer Schnittstelle – im Backend `apps/api/src/auth/provider.ts`, im Frontend `apps/web/src/lib/auth/`. Supabase-spezifischer Code steht nur in `auth/providers/supabase.ts` bzw. `lib/auth/supabase.ts`. Ein weiterer Anbieter wird ergänzt, indem er diese Schnittstellen umsetzt und unter `AUTH_PROVIDER`/`VITE_AUTH_PROVIDER` eingetragen wird.
+- **Berechtigungen:** Plattform-Administratoren (`platform_admin`), Mitgliedschaften und Rollen liegen in der eigenen Datenbank; Benutzer-IDs werden als Text gespeichert, weil Anmeldedienste unterschiedliche ID-Formate verwenden.
+
+Einen Plattform-Administrator ernennen (direkt in der Datenbank):
+
+```sql
+insert into platform_admin (user_id, email) values ('<Benutzer-ID>', '<E-Mail>');
+```

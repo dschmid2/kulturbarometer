@@ -19,15 +19,15 @@ Dieses Dokument legt den verbindlichen Techstack des Wertebarometers fest. Spezi
 
 ## Datenbank
 
-- **Datenbank-Anbindung:** Supabase (PostgreSQL), Projekt `wertebarometer`, Ref `lxuwfwbrlfofafwscojq` (Region eu-west-1)
-- **Zugriff aus dem Backend:** direkte Postgres-Verbindung mit `postgres` (postgres.js) für alle Abläufe, damit Transaktionen und Zeilensperren möglich sind. Auf Vercel über den Supabase-Connection-Pooler im Transaktionsmodus (Port 6543, `prepare: false`).
-- **Schema-Änderungen:** als SQL-Migrationen im Verzeichnis `supabase/migrations`.
-- **Row Level Security:** auf allen Tabellen aktiviert, ohne Policies für `anon`/`authenticated`. Das Frontend greift nie direkt auf Tabellen zu; nur das Backend liest und schreibt.
+- **Datenbank:** PostgreSQL, **anbieterunabhängig**. Aktuell Supabase, Projekt `wertebarometer`, Ref `lxuwfwbrlfofafwscojq` (Region eu-west-1); geplant ist der Wechsel zu Neon. Code und Migrationen dürfen keine anbieterspezifischen Funktionen voraussetzen (keine Supabase-Schemas wie `auth`, keine Data-API, keine Erweiterungen ausser Standard-PostgreSQL).
+- **Zugriff aus dem Backend:** direkte Postgres-Verbindung mit `postgres` (postgres.js) über `DATABASE_URL` für alle Abläufe, damit Transaktionen und Zeilensperren möglich sind. Auf Vercel über einen Connection-Pooler im Transaktionsmodus (`prepare: false`).
+- **Schema-Änderungen:** als SQL-Migrationen im Verzeichnis `db/migrations`, angewendet mit dem eigenen Runner (`npm run db:migrate`, Tabelle `schema_migrations`).
+- **Row Level Security:** auf allen Tabellen aktiviert, ohne Policies. Das Frontend greift nie direkt auf Tabellen zu; nur das Backend liest und schreibt. So bleiben die Tabellen auch bei Anbietern mit automatisch erzeugten APIs (Supabase PostgREST, Neon Data API) geschützt.
 
 ## Querschnitt
 
-- **Authentifizierung:** Supabase Auth (E-Mail und Passwort). Das Frontend meldet sich über supabase-js an; das Backend prüft das Zugriffstoken in der Middleware `AuthGuard`. Sperre nach Fehlversuchen und Inaktivitäts-Timeout (Anforderung 1.3, 1.6) werden nach dem Prototyp im Backend ergänzt.
-- **Mandanten und Rollen:** Daten gehören einer Unternehmung; Rollen (`ADMIN`, `WERTE`, `KAMPAGNEN`) stehen je Unternehmung in `organization_member`. Die aktive Unternehmung kommt im Header `X-Organization-Id`. Plattform-Administratoren tragen `app_metadata.kb_role = 'admin'` (nur serverseitig setzbar). Einladungen neuer Konten laufen über die Supabase-Admin-API mit `SUPABASE_SECRET_KEY` (optional, nur im Backend).
+- **Authentifizierung:** E-Mail und Passwort über einen austauschbaren Anmeldedienst (aktuell Supabase Auth, geplant Neon Auth/Better Auth). Backend: Schnittstelle `AuthProvider` (`apps/api/src/auth/provider.ts`, Auswahl über `AUTH_PROVIDER`), die das Zugriffstoken in `AuthGuard` prüft und Konten nachschlägt bzw. einlädt. Frontend: Schnittstelle `AuthClient` (`apps/web/src/lib/auth/`, Auswahl über `VITE_AUTH_PROVIDER`). Anbieterspezifischer Code steht nur in den jeweiligen Umsetzungen. Sperre nach Fehlversuchen und Inaktivitäts-Timeout (Anforderung 1.3, 1.6) werden nach dem Prototyp im Backend ergänzt.
+- **Mandanten und Rollen:** Daten gehören einer Unternehmung; Rollen (`ADMIN`, `WERTE`, `KAMPAGNEN`) stehen je Unternehmung in `organization_member`. Die aktive Unternehmung kommt im Header `X-Organization-Id`. Plattform-Administratoren stehen in der Tabelle `platform_admin` der eigenen Datenbank (nicht beim Anmeldedienst). Benutzer-IDs werden als Text gespeichert. Einladungen neuer Konten laufen über den Anmeldedienst (bei Supabase die Admin-API mit `SUPABASE_SECRET_KEY`, optional, nur im Backend).
 - **Validierung:** Zod (geteilte Schemata in `packages/shared`)
 - **Tests:** Vitest und fast-check (Property-Based Testing)
 - **LLM-Anbindung:** hinter dem Port `ItemGenerationPort`; im Prototyp ein Mock-Adapter, ein echter Adapter sobald ein API-Zugang vorliegt
@@ -40,7 +40,7 @@ npm-Workspaces in einem Repository:
 - `apps/web` – React-Frontend (Admin- und Teilnahmebereich)
 - `apps/api` – Express-Backend
 - `packages/shared` – gemeinsame Typen, Zod-Schemata und reine Fachlogik (z. B. Ist-Score, Verteilung)
-- `supabase/migrations` – Datenbankschema
+- `db/migrations` – Datenbankschema (reines PostgreSQL)
 
 ## Gestaltung
 
@@ -56,4 +56,4 @@ Der visuelle Auftritt folgt kulturarchitekt.ch (Werte aus dem WordPress-Theme Ne
 ## Hosting
 
 - **Vercel:** ein Projekt; das Frontend als statischer Build, das Express-Backend als Vercel Function unter `/api`.
-- **Konfiguration:** Zugangsdaten (Datenbank-Verbindung, Supabase-Keys) ausschließlich als Umgebungsvariablen in Vercel bzw. lokal in einer nicht eingecheckten `.env`.
+- **Konfiguration:** Zugangsdaten (Datenbank-Verbindung, Schlüssel des Anmeldedienstes) ausschließlich als Umgebungsvariablen in Vercel bzw. lokal in einer nicht eingecheckten `.env`.

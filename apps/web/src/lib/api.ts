@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { auth } from './auth';
 
 export class ApiError extends Error {
   constructor(
@@ -24,8 +24,8 @@ export function setActiveOrganizationId(id: string | null) {
 }
 
 async function authHeader(): Promise<Record<string, string>> {
-  const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } };
-  return data.session ? { Authorization: `Bearer ${data.session.access_token}` } : {};
+  const session = (await auth?.getSession()) ?? null;
+  return session ? { Authorization: `Bearer ${session.accessToken}` } : {};
 }
 
 export async function apiFetch<T>(

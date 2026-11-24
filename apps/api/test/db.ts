@@ -1,20 +1,18 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import type { Sql } from '../src/db/client.js';
+import { migrate } from '../src/db/migrate.js';
 
 /**
  * Integrationstests laufen gegen eine echte Postgres-Datenbank, wenn TEST_DATABASE_URL gesetzt ist
  * (z. B. postgres://postgres@localhost:54329/kb_it). Die Datenbank wird neu angelegt und mit den
- * Migrationen aus supabase/migrations befüllt.
+ * Migrationen aus db/migrations befüllt (über denselben Runner wie in Produktion).
  */
 export const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
-const MIGRATIONS = fileURLToPath(new URL('../../../supabase/migrations/', import.meta.url));
-
-export async function createTestDb(): Promise<Sql> {
+/** Leere Datenbank ohne Migrationen (für Tests des Runners). */
+export async function createEmptyTestDb(): Promise<Sql> {
   const url = new URL(TEST_DATABASE_URL!);
-  const dbName = `${url.pathname.slice(1)}_${process.pid}_${Date.now()}`;
+  const dbName = `${url.pathname.slice(1)}_${process.pid}_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const admin = postgres({ ...parse(url), database: 'postgres', onnotice: () => {} });
   await admin.unsafe(`create database "${dbName}"`);
   await admin.end();
@@ -24,9 +22,12 @@ export async function createTestDb(): Promise<Sql> {
     onnotice: () => {},
     types: { numeric: { to: 1700, from: [1700], serialize: String, parse: Number } },
   }) as unknown as Sql;
-  for (const file of readdirSync(MIGRATIONS).sort()) {
-    await sql.unsafe(readFileSync(MIGRATIONS + file, 'utf8'));
-  }
+  return sql;
+}
+
+export async function createTestDb(): Promise<Sql> {
+  const sql = await createEmptyTestDb();
+  await migrate(sql);
   return sql;
 }
 
@@ -46,6 +47,6 @@ export async function truncateAll(sql: Sql): Promise<void> {
     truncate answer_item, participation, survey_session, participant_marker, campaign_link,
              snapshot_assignment, snapshot_item, campaign_pool_item, campaign,
              value_assignment, item, item_family, focus_sentence, value,
-             organization_member, organization cascade;
+             organization_member, organization, platform_admin cascade;
     set session_replication_role = origin;`);
 }

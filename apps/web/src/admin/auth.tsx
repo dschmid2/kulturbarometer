@@ -1,10 +1,9 @@
-import type { Session } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { setUnauthenticatedHandler } from '../lib/api';
-import { supabase } from '../lib/supabase';
+import { auth, type AuthSession } from '../lib/auth';
 
 interface AuthState {
-  session: Session | null;
+  session: AuthSession | null;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -16,43 +15,39 @@ const AuthContext = createContext<AuthState>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<AuthSession | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!supabase) {
+    if (!auth) {
       setLoading(false);
       return;
     }
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
+    void auth.getSession().then((s) => {
+      setSession(s);
       setLoading(false);
     });
-    const { data } = supabase.auth.onAuthStateChange((_event, s) => setSession(s));
+    const unsubscribe = auth.onSessionChange(setSession);
     // Meldet das Backend 401, wird abgemeldet und die Anmeldeseite angezeigt (1.4).
     setUnauthenticatedHandler(() => {
       sessionStorage.setItem(
         'kb-login-notice',
         'Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.',
       );
-      void supabase?.auth.signOut();
+      void auth?.signOut('local');
     });
-    return () => data.subscription.unsubscribe();
+    return unsubscribe;
   }, []);
 
   /**
-   * Abmelden (1.5): beendet die Sitzung bei Supabase (Token wird ungültig). Ist Supabase nicht
-   * erreichbar, wird die Sitzung zumindest im Browser beendet, damit niemand angemeldet bleibt.
+   * Abmelden (1.5): beendet die Sitzung beim Anmeldedienst (Token wird ungültig). Ist der Dienst
+   * nicht erreichbar, wird die Sitzung zumindest im Browser beendet, damit niemand angemeldet bleibt.
    */
   const signOut = async () => {
-    if (!supabase) return;
-    try {
-      const { error } = await supabase.auth.signOut();
-      if (!error) return;
-    } catch {
-      /* Netzwerkfehler: unten lokal abmelden */
-    }
-    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    if (!auth) return;
+    const res = await auth.signOut('global');
+    if (res.ok) return;
+    await auth.signOut('local');
     setSession(null);
   };
 

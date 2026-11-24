@@ -24,13 +24,13 @@ Dieses Dokument beschreibt die Architektur, den Technologie-Stack, das Datenmode
 
 ### Technologie-Stack
 
-Verbindlich ist der in `.kiro/steering/tech.md` festgelegte Techstack: **React 19 + TypeScript + Vite** im Frontend, **Node.js + Express.js + TypeScript** im Backend (gemeinsame Typen mit dem Frontend) und **Supabase (PostgreSQL)** als Datenbank. Für die dort noch nicht festgelegten Bereiche (in der Tabelle mit *Vorschlag* gekennzeichnet) gelten die folgenden Angaben als unverbindliche Vorschläge bis zur Entscheidung:
+Verbindlich ist der in `.kiro/steering/tech.md` festgelegte Techstack: **React 19 + TypeScript + Vite** im Frontend, **Node.js + Express.js + TypeScript** im Backend (gemeinsame Typen mit dem Frontend) und **PostgreSQL** als Datenbank (anbieterunabhängig; aktuell Supabase, geplant Neon). Für die dort noch nicht festgelegten Bereiche (in der Tabelle mit *Vorschlag* gekennzeichnet) gelten die folgenden Angaben als unverbindliche Vorschläge bis zur Entscheidung:
 
 | Schicht | Technologie | Begründung |
 | --- | --- | --- |
 | Frontend | **React 19 + TypeScript + Vite** (verbindlich); *Vorschlag:* React Router, TanStack Query | Komponentenbasierte UI für Admin-Formulare und den Schieberegler-Survey; TypeScript teilt Typen mit dem Backend; TanStack Query vereinfacht Server-State. |
 | Backend | **Node.js + Express.js + TypeScript** (verbindlich) | Ein Sprach-/Typ-Ökosystem über Front- und Backend mit gemeinsamen Typen. Die Trennung Admin/Teilnahme wird über zwei getrennte Express-Router abgebildet; die Auth-Prüfung (`AuthGuard`) ist eine Express-Middleware, die ausschließlich vor den Admin-Router gehängt wird. Die fachlichen Module sind einfache TypeScript-Module mit expliziter Konstruktor-Injektion ihrer Ports (kein DI-Framework). |
-| Persistenz | **Supabase (PostgreSQL)** (verbindlich) | Relationales Modell passt zu den stark verknüpften Entitäten (Wert↔Item↔Zuordnung↔Kampagne); transaktionale Integrität für Snapshot-Erzeugung, Versionierung, Deaktivierung und Antwort-Speicherung; `NUMERIC` für exakte Dezimalbewertungen; Constraints und Trigger sichern Invarianten auf Datenbankebene ab. |
+| Persistenz | **PostgreSQL** (verbindlich, anbieterunabhängig) | Relationales Modell passt zu den stark verknüpften Entitäten (Wert↔Item↔Zuordnung↔Kampagne); transaktionale Integrität für Snapshot-Erzeugung, Versionierung, Deaktivierung und Antwort-Speicherung; `NUMERIC` für exakte Dezimalbewertungen; Constraints und Trigger sichern Invarianten auf Datenbankebene ab. |
 | Datenbank-Zugriff | *Vorschlag:* direkte Postgres-Verbindung des Backends zur Supabase-Datenbank (z. B. `pg`/`postgres.js` mit typisierten Queries) für alle transaktionalen Abläufe; alternativ supabase-js mit Service-Key, wobei transaktionale Abläufe dann als Postgres-Funktionen (RPC) umgesetzt werden | Das Design verlangt mehrere Operationen in **einer Transaktion** inkl. Zeilensperren (`SELECT … FOR UPDATE`) – u. a. `activateCampaign`, `createNewVersion`, `deactivateSnapshotItem`, `submitAnswer`, `importItems`. supabase-js bietet über die REST-Schnittstelle keine clientseitigen Transaktionen; diese Abläufe müssen daher entweder über eine direkte Postgres-Verbindung oder als Datenbankfunktionen laufen. Der Datenbankzugriff erfolgt ausschließlich serverseitig; das Frontend greift nie direkt auf Supabase zu (Row Level Security bleibt aktiviert und gewährt anonymen Rollen keinen Zugriff). |
 | Authentifizierung | *Vorschlag:* **serverseitige Sessions** (signierte, HTTP-only Session-Cookies) mit Session-Tabelle in der Supabase-Datenbank; Passwort-Hashing mit **Argon2id**. Alternative: Supabase Auth | Serverseitige Sessions erlauben sofortige Invalidierung bei Logout (Anforderung 1.5), Inaktivitäts-Timeout (Anforderung 1.6) und einen serverseitigen Lockout-Zähler (Anforderung 1.3). Bei Supabase Auth müssen Lockout (5 Fehlversuche/15 Minuten) und 30-Minuten-Inaktivitäts-Timeout zusätzlich im Backend durchgesetzt werden. |
 | LLM-Integration | *Vorschlag:* **Port/Adapter** (`ItemGenerationPort`) mit konkretem Adapter (z. B. OpenAI/Azure OpenAI/Bedrock), austauschbar per Konfiguration | Entkoppelt Kerndomäne vom Anbieter; erlaubt Mock-Adapter in Tests; strukturierte Ausgabe wird validiert, bevor sie als Vorschlag erscheint. |
@@ -65,7 +65,7 @@ graph TB
         MailAdapter[Mail-Adapter<br/>SMTP]
     end
 
-    DB[(Supabase<br/>PostgreSQL)]
+    DB[(PostgreSQL<br/>beliebiger Anbieter)]
     Sessions[(Session-Tabelle<br/>Supabase)]
 
     AdminUI -->|authentifiziert| AuthMW --> AdminAPI --> AppSvc
@@ -119,21 +119,22 @@ Die Fachlogik ist in Module gegliedert. Jedes Modul kapselt seine Entitäten, Va
 
 ### AuthModule (Anforderung 1 und 12)
 
-- **Anmeldung über Supabase Auth** (E-Mail und Passwort). Das Frontend meldet sich mit supabase-js an und sendet das Zugriffstoken als `Authorization: Bearer …`. Abmeldung beendet die Sitzung in Supabase (1.5).
-- `AuthGuard` (Express-Middleware) – prüft Signatur und Ablauf des Tokens (`getClaims`) und weist Admin-Routen ohne gültiges Token mit 401 ab (1.4). Ergebnis ist die Identität `{ userId, email, platformAdmin }`; `platformAdmin` stammt aus `app_metadata.kb_role = 'admin'`, das nur serverseitig gesetzt werden kann.
+- **Anmeldung über einen austauschbaren Anmeldedienst** (E-Mail und Passwort; aktuell Supabase Auth). Das Frontend meldet sich über die Schnittstelle `AuthClient` an und sendet das Zugriffstoken als `Authorization: Bearer …`. Abmeldung beendet die Sitzung beim Anmeldedienst (1.5).
+- `AuthProvider` (Port im Backend, Auswahl über `AUTH_PROVIDER`): `verifyToken` prüft Signatur und Ablauf und liefert `{ userId, email }`; `directory` schlägt Konten per E-Mail nach und lädt ein. Anbieterspezifischer Code steht nur in den Umsetzungen (`auth/providers/*`).
+- `AuthGuard` (Express-Middleware) – prüft das Token über den `AuthProvider` und weist Admin-Routen ohne gültiges Token mit 401 ab (1.4). Ergebnis ist die Identität `{ userId, email, platformAdmin }`; `platformAdmin` stammt aus der Tabelle `platform_admin` der eigenen Datenbank, die nur direkt in der Datenbank gepflegt wird.
 - `orgContext` – liest die **aktive Unternehmung** aus dem Header `X-Organization-Id`, lädt die Mitgliedschaft des Benutzers und legt `{ id, name, roles }` an die Anfrage. Ohne Header 400, ohne Mitgliedschaft (und ohne Plattform-Admin-Recht) 403 (12.1, 12.9). Plattform-Administratoren erhalten in jeder Unternehmung alle Rollen.
 - `requireRole(...roles)` – verlangt mindestens eine der Rollen in der aktiven Unternehmung, sonst 403 mit Nennung der fehlenden Rolle (12.9). `requirePlatformAdmin` schützt die Verwaltung der Unternehmungen (12.4).
 - **Rechte je Bereich** (12.10): Werte, Fokussätze und Items ändern → `WERTE`; Werte und Items lesen → `WERTE` oder `KAMPAGNEN`; Kampagnen und Auswertungen → `KAMPAGNEN`; Benutzer der Unternehmung → `ADMIN`; Unternehmungen → Plattform-Administrator.
-- Sperre nach Fehlversuchen (1.3) und Inaktivitäts-Timeout (1.6) folgen nach dem Prototyp: Supabase Auth begrenzt Anmeldeversuche bereits; der 30-Minuten-Timeout wird im Backend über den Zeitpunkt der letzten Aktivität ergänzt.
+- Sperre nach Fehlversuchen (1.3) und Inaktivitäts-Timeout (1.6) folgen nach dem Prototyp: der Anmeldedienst begrenzt Anmeldeversuche bereits; der 30-Minuten-Timeout wird im Backend über den Zeitpunkt der letzten Aktivität ergänzt.
 
 ### OrganizationModule – Unternehmungen, Benutzer und Rollen (Anforderung 12)
 
 - `getMe(user)` – Identität mit allen Unternehmungen und Rollen; Plattform-Administratoren sehen alle Unternehmungen mit allen Rollen. Grundlage für Navigation und Auswahl der aktiven Unternehmung im Frontend (12.11, 12.12).
 - `listOrganizations`, `createOrganization`, `renameOrganization` – nur Plattform-Administratoren; Name 1–200 Zeichen, eindeutig (12.3, 12.4).
 - `listMembers`, `addMember(email, roles)`, `updateMemberRoles`, `removeMember` – Rolle `ADMIN` in der aktiven Unternehmung (12.6–12.8).
-  - `addMember` sucht das Konto per E-Mail im `UserDirectory`. Existiert keines, lädt es über die Supabase-Admin-API ein, sofern `SUPABASE_SECRET_KEY` gesetzt ist; sonst Fehler `USER_NOT_FOUND` mit Hinweis (12.7).
+  - `addMember` sucht das Konto per E-Mail im `UserDirectory`. Existiert keines, lädt es über den Anmeldedienst ein, sofern Einladungen konfiguriert sind (bei Supabase `SUPABASE_SECRET_KEY`); sonst Fehler `USER_NOT_FOUND` mit Hinweis (12.7).
   - Änderungen und Entfernen werden abgelehnt (`LAST_ADMIN`), wenn danach niemand mehr die Rolle `ADMIN` hätte (12.8).
-- `UserDirectory` (Port): `findByEmail` liest `auth.users` über die direkte Datenbankverbindung; `invite` nutzt die Supabase-Admin-API. In Tests durch eine Attrappe ersetzt.
+- `UserDirectory` (Teil des `AuthProvider`): `findByEmail` und `invite` beim jeweiligen Anmeldedienst (Supabase: `auth.users` und Admin-API). In Tests durch eine Attrappe ersetzt.
 - **Trennung der Unternehmungen**: Jede Abfrage der Fachmodule filtert nach `organization_id` der aktiven Unternehmung; Zugriffe auf IDs einer anderen Unternehmung liefern 404. Zusätzlich verhindern Datenbank-Trigger Werte-Zuordnungen und Pool-Einträge über Unternehmungsgrenzen (12.1, 12.2).
 
 ### ValuesModule – Unternehmenswerte & Fokussätze (Anforderung 2)
@@ -333,13 +334,13 @@ Jede Zeile der Tabelle `Item` ist eine **Item-Version**; zusammengehörige Versi
 
 ### Entitäten
 
-**Benutzerkonten** werden von Supabase Auth geführt (`auth.users`); die Applikation speichert keine Passwörter.
+**Benutzerkonten** werden vom Anmeldedienst geführt (aktuell Supabase Auth); die Applikation speichert keine Passwörter. **Plattform-Administratoren** stehen in `platform_admin (user_id text, email)`. Benutzer-IDs sind Text, weil Anmeldedienste unterschiedliche ID-Formate verwenden.
 
 **Organization (Unternehmung)**
 - `id`, `name` (1–200, eindeutig), `createdAt`, `updatedAt` (12.3).
 
 **OrganizationMember (Mitgliedschaft)**
-- `organizationId`, `userId` (Konto in Supabase Auth), `email` (nur zur Anzeige in der Verwaltung), `roles` (nicht leere Teilmenge von {`ADMIN`, `WERTE`, `KAMPAGNEN`}), `createdAt`; Primärschlüssel `(organizationId, userId)` (12.5). Ohne Bezug zu Umfrage-Antworten (12.13).
+- `organizationId`, `userId` (Text; Konto beim Anmeldedienst), `email` (nur zur Anzeige in der Verwaltung), `roles` (nicht leere Teilmenge von {`ADMIN`, `WERTE`, `KAMPAGNEN`}), `createdAt`; Primärschlüssel `(organizationId, userId)` (12.5). Ohne Bezug zu Umfrage-Antworten (12.13).
 
 **Value (Unternehmenswert)**
 - `id`, `organizationId`, `name` (1–100, eindeutig je Unternehmung, 2.3), `description` (0–1.000), `createdAt`, `updatedAt`.

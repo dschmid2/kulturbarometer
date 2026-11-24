@@ -26,19 +26,19 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
     sql = await createTestDb();
     app = createApp({
       sql: () => sql,
-      verifyToken: async (token) => {
-        const user = USERS[token as UserKey];
-        return user ? { ...user, platformAdmin: token === 'platform' } : null;
-      },
-      userDirectory: {
-        async findByEmail(email) {
-          const user = Object.values(USERS).find((u) => u.email === email.toLowerCase());
-          return user ? { id: user.userId, email: user.email } : null;
-        },
-        async invite(email) {
-          return email.endsWith('@invite.test')
-            ? { id: '00000000-0000-4000-8000-00000000a0ff', email }
-            : null;
+      auth: {
+        name: 'test',
+        verifyToken: async (token) => USERS[token as UserKey] ?? null,
+        directory: {
+          async findByEmail(email) {
+            const user = Object.values(USERS).find((u) => u.email === email.toLowerCase());
+            return user ? { id: user.userId, email: user.email } : null;
+          },
+          async invite(email) {
+            return email.endsWith('@invite.test')
+              ? { id: '00000000-0000-4000-8000-00000000a0ff', email }
+              : null;
+          },
         },
       },
     });
@@ -56,6 +56,9 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
       [ORG_A, 'admin', ['ADMIN']],
       [ORG_B, 'owner', ['WERTE']],
     ];
+    // Plattform-Administratoren stehen in der eigenen Datenbank, nicht beim Anmeldedienst.
+    await sql`insert into platform_admin (user_id, email)
+              values (${USERS.platform.userId}, ${USERS.platform.email})`;
     for (const [org, key, roles] of members) {
       await sql`insert into organization_member (organization_id, user_id, email, roles)
                 values (${org}, ${USERS[key].userId}, ${USERS[key].email}, ${roles})`;

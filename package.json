@@ -13,7 +13,8 @@
     "dev:web": "npm run dev -w @kb/web",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:migrate": "npm run db:migrate -w @kb/api"
   },
   "devDependencies": {
     "prettier": "^3.10.1",
