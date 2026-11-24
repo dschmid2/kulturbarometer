@@ -68,6 +68,8 @@ Darüber steht der **Plattform-Administrator**: Er legt Unternehmungen an, benen
 
 Unter **Benutzer** ordnet eine Person mit der Rolle Benutzer-Administration andere per E-Mail-Adresse zu. Gibt es zu der Adresse schon ein Konto, wird es direkt zugeordnet. Andernfalls verschickt das Wertebarometer eine Einladung per E-Mail, sofern `SUPABASE_SECRET_KEY` gesetzt ist; ohne diesen Schlüssel muss das Konto zuerst im Supabase-Dashboard angelegt werden. Mindestens eine Person pro Unternehmung behält immer die Rolle Benutzer-Administration.
 
+Eingeladene Personen landen nach dem Klick auf den Einladungslink direkt bei **Passwort festlegen**. Angemeldete Benutzer ändern ihr Passwort im Benutzermenü unter **Passwort ändern**; dabei wird das aktuelle Passwort bestätigt und andere angemeldete Geräte werden abgemeldet. Die Mindestlänge in Supabase (Authentication → Providers → Email → Minimum password length) sollte höchstens 8 betragen, damit sie zur Prüfung in der Oberfläche passt.
+
 ## Umgebungsvariablen
 
 | Variable | Verwendung |

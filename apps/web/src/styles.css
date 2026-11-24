@@ -1266,3 +1266,12 @@ a.button {
     gap: 8px;
   }
 }
+
+/* Konto */
+.narrow-form {
+  max-width: 520px;
+}
+.success {
+  color: #2f7a31;
+  font-weight: 600;
+}
