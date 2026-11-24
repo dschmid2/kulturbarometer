@@ -24,7 +24,7 @@
   /* Perspektiven (für Auswertungen) */
   --persp-selbst: var(--ka-orange);
   --persp-team: var(--ka-ink);
-  --persp-fuehrung: var(--ka-green);
+  --persp-fuehrung: #3f8f41; /* dunkleres Grün für ausreichenden Kontrast in Diagrammen */
 
   --font-heading: 'Space Grotesk', system-ui, sans-serif;
   --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -188,7 +188,8 @@ a {
 /* Buttons: Pillen wie auf der Website                                   */
 /* ------------------------------------------------------------------ */
 
-button {
+button,
+a.button {
   font: inherit;
   font-weight: 600;
   line-height: 1.2;
@@ -204,7 +205,8 @@ button {
     color 0.15s,
     border-color 0.15s;
 }
-button:hover:not(:disabled) {
+button:hover:not(:disabled),
+a.button:hover {
   background: var(--ka-ink);
   border-color: var(--ka-ink);
   color: var(--ka-white);
@@ -1003,4 +1005,264 @@ a.card-link:hover {
 .facts dd {
   margin: 0;
   font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ */
+/* Auswertung                                                           */
+/* ------------------------------------------------------------------ */
+
+a.button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.panel-head h2 {
+  margin: 0;
+}
+.evaluation > .panel-head {
+  margin: 8px 0 4px;
+}
+.eval-legend {
+  display: flex;
+  gap: 16px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--ka-ink-80);
+}
+.eval-legend li,
+.persp-tile-head,
+.trend-latest li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.persp-icon {
+  flex: none;
+}
+
+/* Punktdiagramm: alle Werte auf der Skala 1–5 */
+.dotplot {
+  margin-top: 16px;
+}
+.dotplot-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 180px) 1fr;
+  align-items: center;
+  gap: 16px;
+  min-height: 40px;
+}
+.dotplot-label {
+  font-weight: 600;
+  color: var(--ka-ink);
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dotplot-label:hover {
+  color: var(--ka-orange);
+}
+.dotplot-track {
+  position: relative;
+  height: 40px;
+  margin: 0 10px;
+  border-bottom: 1px solid var(--ka-ink-12);
+}
+.dotplot-grid {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  width: 1px;
+  background: var(--ka-ink-06);
+}
+.dotplot-mark {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  cursor: default;
+  border-radius: 50%;
+}
+.dotplot-mark:hover,
+.dotplot-mark:focus-visible {
+  z-index: 2;
+}
+.dotplot-mark[data-tip]:hover::after,
+.dotplot-mark[data-tip]:focus-visible::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  background: var(--ka-ink);
+  color: var(--ka-white);
+  font-size: 0.8rem;
+  padding: 4px 8px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+.scale-axis {
+  position: relative;
+  height: 20px;
+  margin: 0 10px;
+  font-size: 0.75rem;
+  color: var(--ka-ink-60);
+}
+.scale-axis span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+/* Detail je Wert */
+.value-eval h2 {
+  margin-bottom: 14px;
+}
+.value-eval {
+  scroll-margin-top: 90px;
+}
+.persp-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.persp-tile {
+  border: 1px solid var(--ka-ink-12);
+  border-radius: 14px;
+  padding: 14px 14px 6px;
+}
+.persp-tile-head {
+  font-weight: 600;
+}
+.persp-score {
+  font-family: var(--font-heading);
+  font-size: 2.2rem;
+  font-weight: 700;
+  line-height: 1.1;
+  margin: 6px 0 2px;
+}
+.persp-tile p {
+  margin: 0 0 8px;
+}
+.persp-hidden {
+  color: var(--ka-ink-60);
+  font-style: italic;
+  padding: 24px 0;
+}
+.gaps {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+.gap-chip {
+  border-radius: var(--radius-pill);
+  padding: 4px 12px;
+  background: var(--ka-light);
+  font-size: 0.85rem;
+}
+.gap-strong {
+  background: var(--ka-orange-14);
+  box-shadow: inset 0 0 0 2px var(--ka-orange);
+}
+.table-alt,
+.comments {
+  margin-top: 14px;
+}
+.table-alt summary,
+.comments summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.comments ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.comments li {
+  margin: 4px 0;
+}
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 8px;
+  font-size: 0.85rem;
+  display: block;
+  overflow-x: auto;
+}
+.data-table th,
+.data-table td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--ka-ink-12);
+  text-align: left;
+  white-space: nowrap;
+}
+.chart-tip {
+  background: var(--ka-ink);
+  color: var(--ka-white);
+  font-size: 0.8rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+  line-height: 1.5;
+}
+
+/* Entwicklung */
+.trend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 20px;
+}
+.trend-card h3 {
+  margin: 0 0 8px;
+}
+.trend-latest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+}
+.trend-dir {
+  font-weight: 700;
+}
+.dir-STEIGT {
+  color: #2f7a31;
+}
+.dir-FAELLT {
+  color: var(--ka-danger);
+}
+.dir-GLEICH {
+  color: var(--ka-ink-60);
+}
+
+@media (max-width: 760px) {
+  .persp-grid {
+    grid-template-columns: 1fr;
+  }
+  .trend-grid {
+    grid-template-columns: 1fr;
+  }
+  .dotplot-row {
+    grid-template-columns: 96px 1fr;
+    gap: 8px;
+  }
 }

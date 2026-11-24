@@ -7,10 +7,12 @@ import { apiFetch } from '../lib/api';
 import { AuthProvider, useAuth } from './auth';
 import { CampaignDetailPage } from './CampaignDetailPage';
 import { CampaignsPage } from './CampaignsPage';
+import { EvaluationPage } from './EvaluationPage';
 import { ItemsPage } from './ItemsPage';
 import { LoginPage } from './LoginPage';
 import { MembersPage } from './MembersPage';
 import { OrganizationsPage } from './OrganizationsPage';
+import { TrendsPage } from './TrendsPage';
 import type { Me } from './types';
 import { ValuesPage } from './ValuesPage';
 import { UserMenu } from './UserMenu';
@@ -85,6 +87,7 @@ function AdminShell() {
           {hasRole('WERTE') && <NavLink to="/admin/werte">Werte</NavLink>}
           {hasRole('WERTE') && <NavLink to="/admin/fragen">Fragen</NavLink>}
           {hasRole('KAMPAGNEN') && <NavLink to="/admin/kampagnen">Kampagnen</NavLink>}
+          {hasRole('KAMPAGNEN') && <NavLink to="/admin/auswertung">Auswertung</NavLink>}
         </nav>
         <span className="spacer" />
         {me.organizations.length > 1 ? (
@@ -165,6 +168,22 @@ function AdminShell() {
               element={
                 <Guard roles={['KAMPAGNEN']}>
                   <CampaignDetailPage />
+                </Guard>
+              }
+            />
+            <Route
+              path="kampagnen/:id/auswertung"
+              element={
+                <Guard roles={['KAMPAGNEN']}>
+                  <EvaluationPage />
+                </Guard>
+              }
+            />
+            <Route
+              path="auswertung"
+              element={
+                <Guard roles={['KAMPAGNEN']}>
+                  <TrendsPage />
                 </Guard>
               }
             />

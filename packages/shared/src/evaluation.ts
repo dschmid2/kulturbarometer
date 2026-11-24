@@ -127,3 +127,93 @@ export function sortValueEvaluations(values: readonly ValueEvaluation[]): ValueE
     return a.name.localeCompare(b.name, 'de');
   });
 }
+
+// ---------------------------------------------------------------------------
+// Entwicklung über abgeschlossene Kampagnen (Anforderung 10.4, 10.5, 10.15, 10.20)
+// ---------------------------------------------------------------------------
+
+export type TrendDirection = 'STEIGT' | 'FAELLT' | 'GLEICH';
+
+export interface TrendPoint {
+  istScore: number;
+  stdDev: number;
+  /** Richtung gegenüber der letzten vorherigen Kampagne mit angezeigtem Wert; `null` = erste. */
+  direction: TrendDirection | null;
+}
+
+export interface TrendCampaign {
+  id: string;
+  title: string;
+  endDate: string;
+}
+
+export interface ValueTrend {
+  valueId: string;
+  name: string;
+  /** Ein Eintrag je Kampagne (gleiche Reihenfolge wie `campaigns`); `null` = Lücke. */
+  points: Array<Record<Perspective, TrendPoint | null>>;
+}
+
+export interface TrendResult {
+  campaigns: TrendCampaign[];
+  values: ValueTrend[];
+}
+
+/**
+ * Baut den Verlauf je Wert und Perspektive aus den Auswertungen abgeschlossener Kampagnen.
+ * Nicht angezeigte Perspektiven (Schwelle nicht erreicht) werden zur Lücke; die Richtung
+ * bezieht sich auf die letzte vorherige Kampagne mit angezeigtem Wert (10.15).
+ */
+export function buildValueTrends(
+  input: ReadonlyArray<TrendCampaign & { evaluation: CampaignEvaluation }>,
+  currentNames: ReadonlyMap<string, string> = new Map(),
+): TrendResult {
+  const ordered = [...input].sort((a, b) => a.endDate.localeCompare(b.endDate));
+  const names = new Map<string, string>();
+  for (const c of ordered) {
+    if (c.evaluation.state !== 'OK') continue;
+    for (const v of c.evaluation.values) names.set(v.valueId, v.name);
+  }
+  for (const [id, name] of currentNames) if (names.has(id)) names.set(id, name);
+
+  const values: ValueTrend[] = [...names.entries()]
+    .sort((a, b) => a[1].localeCompare(b[1], 'de'))
+    .map(([valueId, name]) => {
+      const last: Record<Perspective, number | null> = { SELBST: null, TEAM: null, FUEHRUNG: null };
+      const points = ordered.map((c) => {
+        const ev =
+          c.evaluation.state === 'OK'
+            ? c.evaluation.values.find((v) => v.valueId === valueId)
+            : undefined;
+        const point = {} as Record<Perspective, TrendPoint | null>;
+        for (const p of PERSPECTIVES) {
+          const cell = ev?.perspectives[p];
+          if (!cell || !cell.shown) {
+            point[p] = null;
+            continue;
+          }
+          const prev = last[p];
+          point[p] = {
+            istScore: cell.istScore,
+            stdDev: cell.distribution.stdDev,
+            direction:
+              prev === null
+                ? null
+                : cell.istScore > prev
+                  ? 'STEIGT'
+                  : cell.istScore < prev
+                    ? 'FAELLT'
+                    : 'GLEICH',
+          };
+          last[p] = cell.istScore;
+        }
+        return point;
+      });
+      return { valueId, name, points };
+    });
+
+  return {
+    campaigns: ordered.map(({ id, title, endDate }) => ({ id, title, endDate })),
+    values,
+  };
+}

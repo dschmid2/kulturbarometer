@@ -58,6 +58,11 @@ export function CampaignDetailPage() {
             <span className={`badge campaign-${c.status}`}>{CAMPAIGN_STATUS_LABELS[c.status]}</span>
           </p>
         </div>
+        {!draft && (
+          <Link className="button" to={`/admin/kampagnen/${c.id}/auswertung`}>
+            {c.status === 'AKTIV' ? 'Zwischenauswertung' : 'Auswertung'}
+          </Link>
+        )}
         {draft && <DeleteDraft campaign={c} />}
       </div>
       {draft ? <DraftEditor campaign={c} /> : <FrozenCampaign campaign={c} />}
