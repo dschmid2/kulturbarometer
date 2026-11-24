@@ -4,7 +4,9 @@
  * Berechtigungen (Plattform-Administratoren, Mitgliedschaften, Rollen) liegen ausschliesslich in
  * der eigenen Datenbank und sind damit unabhängig vom Anbieter.
  */
+import type { Router } from 'express';
 import type { Sql } from '../db/client.js';
+import { neonAuthProvider } from './providers/neon.js';
 import { supabaseAuthProvider } from './providers/supabase.js';
 
 /** Vom Anmeldedienst bestätigte Identität. */
@@ -30,9 +32,11 @@ export interface AuthProvider {
   /** Prüft ein Zugriffstoken (Signatur, Ablauf) und liefert die Identität oder `null`. */
   verifyToken(token: string): Promise<AuthIdentity | null>;
   directory: UserDirectory;
+  /** Optionale Routen unter `/api/auth` (z. B. Proxy zum Anmeldedienst für Cookies auf unserer Domain). */
+  routes?: Router;
 }
 
-export const AUTH_PROVIDERS = ['supabase'] as const;
+export const AUTH_PROVIDERS = ['supabase', 'neon'] as const;
 
 /** Wählt den Anmeldedienst anhand von `AUTH_PROVIDER` (Standard: `supabase`). */
 export function authProviderFromEnv(sql: () => Sql): AuthProvider {
@@ -40,6 +44,8 @@ export function authProviderFromEnv(sql: () => Sql): AuthProvider {
   switch (name) {
     case 'supabase':
       return supabaseAuthProvider(sql);
+    case 'neon':
+      return neonAuthProvider(sql);
     default:
       throw new Error(
         `Unbekannter AUTH_PROVIDER „${name}". Erlaubt: ${AUTH_PROVIDERS.join(', ')}.`,

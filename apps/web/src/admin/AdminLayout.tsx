@@ -1,11 +1,11 @@
 import type { Role } from '@kb/shared';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, type ReactNode } from 'react';
-import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { useState, type ReactNode } from 'react';
+import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Wordmark } from '../BrandMark';
 import { apiFetch } from '../lib/api';
-import { SET_PASSWORD_FLAG } from '../lib/auth';
-import { AccountPage } from './AccountPage';
+import { auth } from '../lib/auth';
+import { AccountPage, SetPasswordPage } from './AccountPage';
 import { AuthProvider, useAuth } from './auth';
 import { CampaignDetailPage } from './CampaignDetailPage';
 import { CampaignsPage } from './CampaignsPage';
@@ -31,7 +31,25 @@ export function AdminLayout() {
 /** Ohne gültige Sitzung wird nur die Anmeldeseite angezeigt (1.4). */
 function AdminGate() {
   const { session, loading } = useAuth();
+  // Einladungs- oder Wiederherstellungslink: zuerst ein Passwort festlegen (1.9).
+  const [link, setLink] = useState(() => auth?.pendingPasswordLink() ?? null);
   if (loading) return <p className="page muted">Laden …</p>;
+  if (link) {
+    return (
+      <SetPasswordPage
+        type={link}
+        onDone={() => {
+          if (!session) {
+            sessionStorage.setItem(
+              'kb-login-notice',
+              'Ihr Passwort ist festgelegt. Bitte melden Sie sich an.',
+            );
+          }
+          setLink(null);
+        }}
+      />
+    );
+  }
   if (!session) return <LoginPage />;
   return <MeLoader />;
 }
@@ -66,15 +84,7 @@ function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
 function AdminShell() {
   const { me, org, selectOrg, hasRole } = useWorkspace();
   const location = useLocation();
-  const navigate = useNavigate();
   const onAccount = location.pathname.startsWith('/admin/konto');
-
-  // Nach einer Einladung oder Wiederherstellung zuerst ein Passwort festlegen lassen.
-  useEffect(() => {
-    if (sessionStorage.getItem(SET_PASSWORD_FLAG) && !onAccount) {
-      navigate('/admin/konto', { replace: true });
-    }
-  }, [onAccount, navigate]);
   const start = hasRole('WERTE')
     ? 'werte'
     : hasRole('KAMPAGNEN')
