@@ -1,9 +1,11 @@
 import type { Role } from '@kb/shared';
 import { useQuery } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
-import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
+import { useEffect, type ReactNode } from 'react';
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Wordmark } from '../BrandMark';
 import { apiFetch } from '../lib/api';
+import { SET_PASSWORD_FLAG } from '../lib/supabase';
+import { AccountPage } from './AccountPage';
 import { AuthProvider, useAuth } from './auth';
 import { CampaignDetailPage } from './CampaignDetailPage';
 import { CampaignsPage } from './CampaignsPage';
@@ -63,6 +65,16 @@ function Guard({ roles, children }: { roles: Role[]; children: ReactNode }) {
 
 function AdminShell() {
   const { me, org, selectOrg, hasRole } = useWorkspace();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const onAccount = location.pathname.startsWith('/admin/konto');
+
+  // Nach einer Einladung oder Wiederherstellung zuerst ein Passwort festlegen lassen.
+  useEffect(() => {
+    if (sessionStorage.getItem(SET_PASSWORD_FLAG) && !onAccount) {
+      navigate('/admin/konto', { replace: true });
+    }
+  }, [onAccount, navigate]);
   const start = hasRole('WERTE')
     ? 'werte'
     : hasRole('KAMPAGNEN')
@@ -109,7 +121,9 @@ function AdminShell() {
         <UserMenu />
       </header>
       <main className="page" key={org?.id ?? 'none'}>
-        {!org && !me.platformAdmin ? (
+        {onAccount ? (
+          <AccountPage />
+        ) : !org && !me.platformAdmin ? (
           <div className="empty">
             <h2>Noch keiner Unternehmung zugeordnet</h2>
             <p>

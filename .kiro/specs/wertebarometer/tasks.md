@@ -76,6 +76,8 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
     - _Requirements: 1.1, 1.2, 1.4, 1.5_
   - [x] 4.3 Ersten Administrator in Supabase Auth anlegen (dokumentierter Schritt im README)
     - _Requirements: 1.1_
+  - [x] 4.4 Passwort ändern im Benutzermenü (aktuelles Passwort bestätigen, andere Sitzungen beenden) und Passwort festlegen nach Einladungs- oder Wiederherstellungslink
+    - _Requirements: 1.7–1.9_
 
 - [x] 5. Unternehmenswerte und Fokussätze
   - [x] 5.1 Admin-API: anlegen, bearbeiten, löschen (mit Löschschutz und Rücksetzung betroffener Items), auflisten; Fokussätze hinzufügen, bearbeiten, entfernen

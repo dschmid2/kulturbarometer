@@ -87,6 +87,9 @@ Teilnehmer beantworten die Umfrage anonym. Je Item geben Teilnehmer über einen 
 4. WENN eine nicht authentifizierte Person eine Administrationsfunktion aufruft, DANN SOLL DAS System den Zugriff verweigern, keine Daten der Funktion ausliefern und zur Anmeldeseite weiterleiten.
 5. WENN ein Administrator die Abmeldung auslöst, DANN SOLL DAS System die Sitzung sofort beenden, das zugehörige Sitzungstoken ungültig machen und zur Anmeldeseite weiterleiten.
 6. WÄHREND eine authentifizierte Sitzung 30 Minuten ohne Benutzeraktivität bleibt, SOLL DAS System die Sitzung beenden und beim nächsten Zugriff zur Anmeldeseite weiterleiten.
+7. WENN ein angemeldeter Benutzer sein Passwort ändert und dabei das aktuelle Passwort korrekt sowie ein neues Passwort mit 8 bis 72 Zeichen zweimal übereinstimmend eingibt, das sich vom aktuellen unterscheidet, DANN SOLL DAS System das neue Passwort speichern, die Sitzungen des Benutzers auf anderen Geräten beenden, die aktuelle Sitzung erhalten und eine Bestätigung anzeigen.
+8. WENN beim Ändern des Passworts das aktuelle Passwort falsch ist, das neue Passwort die Längen- oder Stärkeanforderungen nicht erfüllt, mit dem aktuellen übereinstimmt oder die Wiederholung abweicht, DANN SOLL DAS System das Passwort nicht ändern und eine Fehlermeldung zum betroffenen Feld anzeigen.
+9. WENN eine Person über einen Einladungs- oder Wiederherstellungslink angemeldet wird, DANN SOLL DAS System sie zuerst ein neues Passwort festlegen lassen, ohne das bisherige Passwort abzufragen, und erst danach die übrigen Bereiche freigeben.
 
 ### Requirement 2: Unternehmenswerte verwalten
 

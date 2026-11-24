@@ -65,6 +65,9 @@ export function UserMenu() {
               Unternehmungen
             </NavLink>
           )}
+          <NavLink to="/admin/konto" role="menuitem" onClick={close}>
+            Passwort ändern
+          </NavLink>
           <button
             type="button"
             role="menuitem"
