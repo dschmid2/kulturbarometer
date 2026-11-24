@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@kb/shared": "*",
+    "@neon/auth": "^0.8.2",
     "@supabase/supabase-js": "^2.119.2",
     "@tanstack/react-query": "^5.108.3",
     "react": "^19.3.1",

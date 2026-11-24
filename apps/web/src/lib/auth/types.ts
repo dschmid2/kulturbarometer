@@ -9,23 +9,41 @@ export interface AuthUser {
 
 export interface AuthSession {
   user: AuthUser;
-  /** Zugriffstoken für `Authorization: Bearer …` an das eigene Backend. */
-  accessToken: string;
 }
 
 /** Vereinheitlichte Fehlercodes, damit die Oberfläche anbieterunabhängige Meldungen zeigt. */
 export type AuthErrorCode =
-  'invalid_credentials' | 'weak_password' | 'same_password' | 'rate_limited' | 'unknown';
+  | 'invalid_credentials'
+  | 'weak_password'
+  | 'same_password'
+  | 'rate_limited'
+  | 'link_invalid'
+  | 'unknown';
 
 export type AuthResult = { ok: true } | { ok: false; code: AuthErrorCode };
+
+/** Art des Links, über den die Person gekommen ist (Einladung oder Passwort vergessen). */
+export type PasswordLinkType = 'invite' | 'recovery';
 
 export interface AuthClient {
   name: string;
   getSession(): Promise<AuthSession | null>;
+  /** Zugriffstoken für `Authorization: Bearer …` an das eigene Backend (bei Bedarf erneuert). */
+  getAccessToken(): Promise<string | null>;
   /** Meldet jede Änderung der Sitzung; liefert eine Funktion zum Abmelden des Beobachters. */
   onSessionChange(listener: (session: AuthSession | null) => void): () => void;
   signIn(email: string, password: string): Promise<AuthResult>;
-  /** `global`: alle Geräte, `local`: nur dieser Browser, `others`: alle anderen Geräte. */
-  signOut(scope: 'global' | 'local' | 'others'): Promise<AuthResult>;
-  updatePassword(newPassword: string): Promise<AuthResult>;
+  /** `global`: alle Geräte, `local`: nur dieser Browser. */
+  signOut(scope: 'global' | 'local'): Promise<AuthResult>;
+  /** Prüft das aktuelle Passwort, setzt das neue und meldet andere Geräte ab. */
+  changePassword(current: string, next: string): Promise<AuthResult>;
+  /** Kam die Person über einen Einladungs- oder Wiederherstellungslink? (beim Laden erkannt) */
+  pendingPasswordLink(): PasswordLinkType | null;
+  /**
+   * „Passwort vergessen“: schickt einen Link zum Festlegen eines neuen Passworts. Antwortet aus
+   * Datenschutzgründen gleich, ob ein Konto existiert oder nicht.
+   */
+  requestPasswordReset(email: string): Promise<AuthResult>;
+  /** Legt über diesen Link ein neues Passwort fest. */
+  setPasswordFromLink(next: string): Promise<AuthResult>;
 }

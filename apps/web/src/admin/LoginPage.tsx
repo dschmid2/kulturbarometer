@@ -11,6 +11,7 @@ export function LoginPage() {
     return notice;
   });
   const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<'login' | 'forgot' | 'sent'>('login');
 
   if (!auth) {
     return (
@@ -21,6 +22,16 @@ export function LoginPage() {
       </main>
     );
   }
+
+  const requestReset = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const res = await auth!.requestPasswordReset(email);
+    setBusy(false);
+    if (res.ok) setMode('sent');
+    else setError('Zu viele Anfragen. Bitte warten Sie einen Moment.');
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -60,40 +71,101 @@ export function LoginPage() {
         </svg>
       </section>
       <main className="login-form">
-        <form className="form card" onSubmit={submit}>
-          <div>
-            <span className="eyebrow">Administration</span>
-            <h2>Anmelden</h2>
-          </div>
-          <label>
-            E-Mail
-            <input
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-          </label>
-          <label>
-            Passwort
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </label>
-          {error && (
-            <p className="error" role="alert">
-              {error}
+        {mode === 'sent' ? (
+          <div className="form card">
+            <div>
+              <span className="eyebrow">Passwort vergessen</span>
+              <h2>E-Mail unterwegs</h2>
+            </div>
+            <p role="status">
+              Falls zu <strong>{email}</strong> ein Konto besteht, erhalten Sie in Kürze eine E-Mail
+              mit einem Link zum Festlegen eines neuen Passworts. Der Link ist eine Stunde gültig.
             </p>
-          )}
-          <button type="submit" disabled={busy}>
-            {busy ? 'Anmelden …' : 'Anmelden'}
-          </button>
-        </form>
+            <button type="button" className="secondary" onClick={() => setMode('login')}>
+              Zur Anmeldung
+            </button>
+          </div>
+        ) : mode === 'forgot' ? (
+          <form key="forgot" className="form card" onSubmit={requestReset}>
+            <div>
+              <span className="eyebrow">Passwort vergessen</span>
+              <h2>Neues Passwort anfordern</h2>
+            </div>
+            <label>
+              E-Mail
+              <input
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </label>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <button type="submit" disabled={busy}>
+              {busy ? 'Senden …' : 'Link senden'}
+            </button>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                setError(null);
+                setMode('login');
+              }}
+            >
+              Zurück zur Anmeldung
+            </button>
+          </form>
+        ) : (
+          <form key="login" className="form card" onSubmit={submit}>
+            <div>
+              <span className="eyebrow">Administration</span>
+              <h2>Anmelden</h2>
+            </div>
+            <label>
+              E-Mail
+              <input
+                type="email"
+                autoComplete="username"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </label>
+            <label>
+              Passwort
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </label>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+              </p>
+            )}
+            <button type="submit" disabled={busy}>
+              {busy ? 'Anmelden …' : 'Anmelden'}
+            </button>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => {
+                setError(null);
+                setMode('forgot');
+              }}
+            >
+              Passwort vergessen?
+            </button>
+          </form>
+        )}
       </main>
     </div>
   );

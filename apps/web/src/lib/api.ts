@@ -24,8 +24,8 @@ export function setActiveOrganizationId(id: string | null) {
 }
 
 async function authHeader(): Promise<Record<string, string>> {
-  const session = (await auth?.getSession()) ?? null;
-  return session ? { Authorization: `Bearer ${session.accessToken}` } : {};
+  const token = (await auth?.getAccessToken()) ?? null;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export async function apiFetch<T>(

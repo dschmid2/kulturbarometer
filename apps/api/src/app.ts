@@ -26,6 +26,15 @@ export function createApp(options: AppOptions = {}) {
 
   const app = express();
   app.disable('x-powered-by');
+  // Anmeldedienst-Routen (z. B. Neon-Auth-Proxy) vor dem JSON-Parser, sie brauchen den Rohinhalt.
+  app.use('/api/auth', (req, res, next) => {
+    const routes = provider().routes;
+    if (!routes) {
+      res.status(404).json({ code: 'NOT_FOUND', message: 'Unbekannter Endpunkt.' });
+      return;
+    }
+    routes(req, res, next);
+  });
   app.use(express.json({ limit: '3mb' }));
   app.use(cookieParser());
 

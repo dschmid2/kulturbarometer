@@ -76,10 +76,13 @@ Eingeladene Personen landen nach dem Klick auf den Einladungslink direkt bei **P
 | Variable | Verwendung |
 | --- | --- |
 | `DATABASE_URL` | Postgres-Verbindung des Backends, bei jedem Anbieter. Auf Vercel ein Verbindungs-Pooler im Transaktionsmodus (z. B. Supabase Port 6543 oder Neon „pooled connection“). **Geheim**, nur in Vercel bzw. lokal in `.env`. |
-| `AUTH_PROVIDER`, `VITE_AUTH_PROVIDER` | Anmeldedienst im Backend bzw. Frontend; derzeit `supabase` (Standard). |
+| `AUTH_PROVIDER`, `VITE_AUTH_PROVIDER` | Anmeldedienst im Backend bzw. Frontend: `supabase` (Standard) oder `neon`. |
 | `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY` | Nur mit `AUTH_PROVIDER=supabase`: Prüfung der Zugriffstokens im Backend |
 | `SUPABASE_SECRET_KEY` | Nur mit `AUTH_PROVIDER=supabase`, optional: Einladungen neuer Benutzer per E-Mail. **Geheim**, nur im Backend (Vercel bzw. `.env`). |
 | `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY` | Nur mit `VITE_AUTH_PROVIDER=supabase`: Anmeldung im Frontend |
+| `NEON_AUTH_BASE_URL` | Nur mit `AUTH_PROVIDER=neon`: Basis-URL von Neon Auth (Neon-Konsole → Branch → Auth → Configuration) |
+| `NEON_AUTH_COOKIE_SECRET` | Nur mit `AUTH_PROVIDER=neon`: mindestens 32 Zeichen, signiert das Sitzungs-Cache-Cookie. **Geheim**, nur Backend. |
+| `NEON_API_KEY`, `NEON_PROJECT_ID`, `NEON_BRANCH_ID` | Nur mit `AUTH_PROVIDER=neon`, optional: Einladungen neuer Benutzer (Konto über die Neon-API anlegen, danach E-Mail zum Festlegen des Passworts). `NEON_API_KEY` ist **geheim**. |
 
 ## Deployment
 
@@ -98,6 +101,7 @@ Die Anwendung ist nicht an einen Postgres-Anbieter gebunden:
   Für eine Datenbank, deren Schema schon besteht, markiert `npm run db:migrate -- --baseline <version>` die Migrationen bis zu dieser Version nur als angewendet.
 - **Datenzugriff:** ausschliesslich über `DATABASE_URL` (postgres.js, `prepare: false`, damit auch Pooler im Transaktionsmodus funktionieren). Für Migrationen besser eine direkte, nicht gepoolte Verbindung verwenden.
 - **Anmeldung:** hinter einer Schnittstelle – im Backend `apps/api/src/auth/provider.ts`, im Frontend `apps/web/src/lib/auth/`. Supabase-spezifischer Code steht nur in `auth/providers/supabase.ts` bzw. `lib/auth/supabase.ts`. Ein weiterer Anbieter wird ergänzt, indem er diese Schnittstellen umsetzt und unter `AUTH_PROVIDER`/`VITE_AUTH_PROVIDER` eingetragen wird.
+- **Neon Auth:** Der Browser spricht Neon Auth über `/api/auth/*` unseres Backends an; das Backend reicht die Anfragen an Neon weiter (`@neon/auth/server`). So liegen die Sitzungs-Cookies auf der eigenen Domain (keine Drittanbieter-Cookies, auch Safari). Das Backend prüft das JWT aus `getSession()` gegen den JWKS-Endpunkt von Neon. Einladungs- und Wiederherstellungslinks führen mit `?token=…` zurück; die Seite „Passwort festlegen“ löst den Token ein.
 - **Berechtigungen:** Plattform-Administratoren (`platform_admin`), Mitgliedschaften und Rollen liegen in der eigenen Datenbank; Benutzer-IDs werden als Text gespeichert, weil Anmeldedienste unterschiedliche ID-Formate verwenden.
 
 Einen Plattform-Administrator ernennen (direkt in der Datenbank):

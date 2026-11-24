@@ -11,9 +11,11 @@
   },
   "dependencies": {
     "@kb/shared": "*",
+    "@neon/auth": "^0.8.2",
     "@supabase/supabase-js": "^2.119.2",
     "cookie-parser": "^1.4.7",
     "express": "^5.3.0",
+    "jose": "^6.2.18",
     "postgres": "~3.4.9",
     "zod": "^4.6.7"
   },
