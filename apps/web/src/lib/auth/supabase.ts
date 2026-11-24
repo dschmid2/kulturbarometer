@@ -70,6 +70,12 @@ export function createSupabaseAuthClient(url: string, key: string): AuthClient {
       await client.auth.signOut({ scope: 'others' }).catch(() => undefined);
       return { ok: true };
     },
+    async requestPasswordReset(email) {
+      const { error } = await client.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/admin`,
+      });
+      return error?.code === 'over_email_send_rate_limit' ? result(error) : { ok: true };
+    },
     pendingPasswordLink() {
       return readLink()?.type ?? null;
     },

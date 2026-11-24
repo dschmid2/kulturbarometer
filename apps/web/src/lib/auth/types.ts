@@ -39,6 +39,11 @@ export interface AuthClient {
   changePassword(current: string, next: string): Promise<AuthResult>;
   /** Kam die Person über einen Einladungs- oder Wiederherstellungslink? (beim Laden erkannt) */
   pendingPasswordLink(): PasswordLinkType | null;
+  /**
+   * „Passwort vergessen“: schickt einen Link zum Festlegen eines neuen Passworts. Antwortet aus
+   * Datenschutzgründen gleich, ob ein Konto existiert oder nicht.
+   */
+  requestPasswordReset(email: string): Promise<AuthResult>;
   /** Legt über diesen Link ein neues Passwort fest. */
   setPasswordFromLink(next: string): Promise<AuthResult>;
 }

@@ -89,7 +89,8 @@ Teilnehmer beantworten die Umfrage anonym. Je Item geben Teilnehmer über einen 
 6. WÄHREND eine authentifizierte Sitzung 30 Minuten ohne Benutzeraktivität bleibt, SOLL DAS System die Sitzung beenden und beim nächsten Zugriff zur Anmeldeseite weiterleiten.
 7. WENN ein angemeldeter Benutzer sein Passwort ändert und dabei das aktuelle Passwort korrekt sowie ein neues Passwort mit 8 bis 72 Zeichen zweimal übereinstimmend eingibt, das sich vom aktuellen unterscheidet, DANN SOLL DAS System das neue Passwort speichern, die Sitzungen des Benutzers auf anderen Geräten beenden, die aktuelle Sitzung erhalten und eine Bestätigung anzeigen.
 8. WENN beim Ändern des Passworts das aktuelle Passwort falsch ist, das neue Passwort die Längen- oder Stärkeanforderungen nicht erfüllt, mit dem aktuellen übereinstimmt oder die Wiederholung abweicht, DANN SOLL DAS System das Passwort nicht ändern und eine Fehlermeldung zum betroffenen Feld anzeigen.
-9. WENN eine Person über einen Einladungs- oder Wiederherstellungslink angemeldet wird, DANN SOLL DAS System sie zuerst ein neues Passwort festlegen lassen, ohne das bisherige Passwort abzufragen, und erst danach die übrigen Bereiche freigeben.
+9. WENN eine Person über einen Einladungs- oder Wiederherstellungslink zur Anwendung kommt, DANN SOLL DAS System sie zuerst ein neues Passwort festlegen lassen, ohne das bisherige Passwort abzufragen, und erst danach die übrigen Bereiche freigeben.
+10. WENN eine Person auf der Anmeldeseite „Passwort vergessen“ wählt und eine E-Mail-Adresse angibt, DANN SOLL DAS System an diese Adresse einen höchstens eine Stunde gültigen Link zum Festlegen eines neuen Passworts senden, sofern ein Konto besteht, und in jedem Fall dieselbe Bestätigung anzeigen, ohne zu verraten, ob ein Konto besteht.
 
 ### Requirement 2: Unternehmenswerte verwalten
 

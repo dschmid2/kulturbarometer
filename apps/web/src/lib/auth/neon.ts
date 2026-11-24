@@ -113,6 +113,13 @@ export function createNeonAuthClient(): AuthClient {
         }),
       );
     },
+    async requestPasswordReset(email) {
+      const r = await attempt(() =>
+        client.requestPasswordReset({ email, redirectTo: `${window.location.origin}/admin` }),
+      );
+      // Nur Drosselung melden; sonst nicht verraten, ob es das Konto gibt.
+      return !r.ok && r.code === 'rate_limited' ? r : { ok: true };
+    },
     pendingPasswordLink() {
       return readLink()?.type ?? null;
     },

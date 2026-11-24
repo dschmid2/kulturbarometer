@@ -1275,3 +1275,20 @@ a.button {
   color: #2f7a31;
   font-weight: 600;
 }
+
+/* Textlink als Button (z. B. „Passwort vergessen?“) */
+button.link-button {
+  background: none;
+  border: none;
+  min-height: 0;
+  padding: 4px 0;
+  color: var(--ka-ink-80);
+  font-weight: 500;
+  text-decoration: underline;
+  align-self: flex-start;
+  transition: color 0.15s;
+}
+button.link-button:hover:not(:disabled) {
+  background: none;
+  color: var(--ka-orange);
+}
