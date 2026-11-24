@@ -1,4 +1,4 @@
-/** Fachliche Grundbegriffe des Kulturbarometers (siehe Glossar in requirements.md). */
+/** Fachliche Grundbegriffe des Wertebarometers (siehe Glossar in requirements.md). */
 
 export const PERSPECTIVES = ['SELBST', 'TEAM', 'FUEHRUNG'] as const;
 export type Perspective = (typeof PERSPECTIVES)[number];

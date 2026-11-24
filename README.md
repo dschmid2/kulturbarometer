@@ -1,8 +1,8 @@
-# Kulturbarometer
+# Wertebarometer
 
-Webapplikation zur Untersuchung der Unternehmenskultur: Unternehmenswerte, Umfrage-Items aus drei Perspektiven (Selbst, Team, Führung), Kampagnen mit anonymer Teilnahme und Auswertung mit Verteilung und Perspektivvergleich.
+Webapplikation zur Untersuchung der gelebten Unternehmenswerte: Unternehmenswerte, Umfrage-Items aus drei Perspektiven (Selbst, Team, Führung), Kampagnen mit anonymer Teilnahme und Auswertung mit Verteilung und Perspektivvergleich.
 
-Spezifikation: `.kiro/specs/kulturbarometer/` (Anforderungen, Design, Umsetzungsplan) und `.kiro/steering/tech.md` (Techstack).
+Spezifikation: `.kiro/specs/wertebarometer/` (Anforderungen, Design, Umsetzungsplan) und `.kiro/steering/tech.md` (Techstack).
 
 ## Aufbau
 
@@ -40,7 +40,7 @@ TEST_DATABASE_URL=postgres://postgres@localhost:5432/kb_it npm test -w @kb/api
 
 ## Unternehmungen, Benutzer und Rollen
 
-Das Kulturbarometer ist mandantenfähig. Werte, Fragen und Kampagnen gehören jeweils einer **Unternehmung**; jede Unternehmung sieht nur ihre eigenen Daten. Benutzer melden sich über Supabase Auth an und haben je Unternehmung eine oder mehrere Rollen:
+Das Wertebarometer ist mandantenfähig. Werte, Fragen und Kampagnen gehören jeweils einer **Unternehmung**; jede Unternehmung sieht nur ihre eigenen Daten. Benutzer melden sich über Supabase Auth an und haben je Unternehmung eine oder mehrere Rollen:
 
 | Rolle | Darf |
 | --- | --- |
@@ -61,12 +61,12 @@ Darüber steht der **Plattform-Administrator**: Er legt Unternehmungen an, benen
    where email = 'admin@example.org';
    ```
 
-3. Im Kulturbarometer unter **Unternehmungen** die erste Unternehmung anlegen und unter **Benutzer** weitere Personen mit ihren Rollen zuordnen.
+3. Im Wertebarometer unter **Unternehmungen** die erste Unternehmung anlegen und unter **Benutzer** weitere Personen mit ihren Rollen zuordnen.
 4. Empfohlen: unter Authentication → Sign In / Providers die Selbstregistrierung („Allow new users to sign up") ausschalten. Neue Personen kommen dann nur über eine Einladung oder das Supabase-Dashboard dazu.
 
 ### Benutzer hinzufügen
 
-Unter **Benutzer** ordnet eine Person mit der Rolle Benutzer-Administration andere per E-Mail-Adresse zu. Gibt es zu der Adresse schon ein Konto, wird es direkt zugeordnet. Andernfalls verschickt das Kulturbarometer eine Einladung per E-Mail, sofern `SUPABASE_SECRET_KEY` gesetzt ist; ohne diesen Schlüssel muss das Konto zuerst im Supabase-Dashboard angelegt werden. Mindestens eine Person pro Unternehmung behält immer die Rolle Benutzer-Administration.
+Unter **Benutzer** ordnet eine Person mit der Rolle Benutzer-Administration andere per E-Mail-Adresse zu. Gibt es zu der Adresse schon ein Konto, wird es direkt zugeordnet. Andernfalls verschickt das Wertebarometer eine Einladung per E-Mail, sofern `SUPABASE_SECRET_KEY` gesetzt ist; ohne diesen Schlüssel muss das Konto zuerst im Supabase-Dashboard angelegt werden. Mindestens eine Person pro Unternehmung behält immer die Rolle Benutzer-Administration.
 
 ## Umgebungsvariablen
 

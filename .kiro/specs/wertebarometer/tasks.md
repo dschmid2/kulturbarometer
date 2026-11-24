@@ -1,6 +1,6 @@
 # Implementation Plan
 
-Umsetzungsplan für den **ersten Prototyp** des Kulturbarometers. Er baut den Kernablauf einmal durchgängig: Werte pflegen → Items erstellen und freigeben → Kampagne aktivieren → über den öffentlichen Link teilnehmen → Auswertung mit Verteilung und Perspektiven ansehen. Grundlage sind `requirements.md`, `design.md` und `.kiro/steering/tech.md`.
+Umsetzungsplan für den **ersten Prototyp** des Wertebarometers. Er baut den Kernablauf einmal durchgängig: Werte pflegen → Items erstellen und freigeben → Kampagne aktivieren → über den öffentlichen Link teilnehmen → Auswertung mit Verteilung und Perspektiven ansehen. Grundlage sind `requirements.md`, `design.md` und `.kiro/steering/tech.md`.
 
 Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingend sind. Die Property-Nummern verweisen auf die Correctness Properties im Design. Was bewusst erst nach dem Prototyp kommt, steht am Ende.
 
@@ -48,7 +48,7 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
     - `selectIncludedParticipations`, `selectScorableRatings`, `computeIstScore`, `countContributingParticipants`, `countExcludedRatings`, Rundung auf zwei Nachkommastellen
     - _Requirements: 9.1–9.7, 10.12_
   - [x]* 3.3 Property-Tests für den Ist-Score
-    - Properties 1–8 und 21 (Feature: kulturbarometer)
+    - Properties 1–8 und 21 (Feature: wertebarometer)
     - _Requirements: 9.1–9.5_
   - [x] 3.4 Verteilung und Perspektivdifferenzen
     - `computeParticipantScores`, `computeDistribution` (fünf Klassen, Median, Standardabweichung), `computePerspectiveGaps`

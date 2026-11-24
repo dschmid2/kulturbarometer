@@ -14,7 +14,7 @@ export function Wordmark() {
   return (
     <span className="wordmark">
       <BrandMark />
-      Kulturbarometer
+      Wertebarometer
     </span>
   );
 }

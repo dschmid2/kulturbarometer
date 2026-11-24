@@ -16,7 +16,7 @@ export function LoginPage() {
     return (
       <main className="page narrow">
         <BrandMark size={40} />
-        <h1>Kulturbarometer</h1>
+        <h1>Wertebarometer</h1>
         <p className="error">
           Die Anmeldung ist nicht konfiguriert (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY
           fehlen).
@@ -40,12 +40,12 @@ export function LoginPage() {
       <section className="login-hero">
         <Wordmark />
         <div>
-          <span className="eyebrow">Unternehmenskultur messen</span>
+          <span className="eyebrow">Unternehmenswerte messen</span>
           <h1>
             Wie <em>gelebt</em> sind eure Werte?
           </h1>
           <p>
-            Das Kulturbarometer zeigt, wie Unternehmenswerte im Daily Business wirken – aus Sicht
+            Das Wertebarometer zeigt, wie Unternehmenswerte im Daily Business wirken – aus Sicht
             jeder einzelnen Person, des Teams und der Führung.
           </p>
         </div>

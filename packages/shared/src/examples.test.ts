@@ -87,7 +87,7 @@ describe('Validierung', () => {
     expect(anonymityThresholdSchema.safeParse(101).success).toBe(false);
   });
 
-  it('Feature: kulturbarometer, Property 17: nur Entwurf → Aktiv → Abgeschlossen', () => {
+  it('Feature: wertebarometer, Property 17: nur Entwurf → Aktiv → Abgeschlossen', () => {
     expect(isAllowedCampaignTransition('ENTWURF', 'AKTIV')).toBe(true);
     expect(isAllowedCampaignTransition('AKTIV', 'ABGESCHLOSSEN')).toBe(true);
     expect(isAllowedCampaignTransition('ENTWURF', 'ABGESCHLOSSEN')).toBe(false);
@@ -97,7 +97,7 @@ describe('Validierung', () => {
 });
 
 describe('Ziehung der Teilnehmer-Teilmenge', () => {
-  it('Feature: kulturbarometer, Property 9 und 10: Größe min(n, aktiv), nur aktive Items, ohne Duplikate', () => {
+  it('Feature: wertebarometer, Property 9 und 10: Größe min(n, aktiv), nur aktive Items, ohne Duplikate', () => {
     fc.assert(
       fc.property(
         fc.uniqueArray(fc.string({ minLength: 1 }), { minLength: 1, maxLength: 40 }),

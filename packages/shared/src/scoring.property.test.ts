@@ -28,7 +28,7 @@ const contributionsWithPositive = fc
   .map(([first, rest]) => [first, ...rest]);
 
 describe('Ist-Score (Anforderung 9)', () => {
-  it('Feature: kulturbarometer, Property 1: Ist-Score liegt im gültigen Wertebereich', () => {
+  it('Feature: wertebarometer, Property 1: Ist-Score liegt im gültigen Wertebereich', () => {
     fc.assert(
       fc.property(contributionsWithPositive, (cs) => {
         const s = computeIstScore(cs)!;
@@ -39,7 +39,7 @@ describe('Ist-Score (Anforderung 9)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 2: Konstante Bewertungen ergeben genau diese Bewertung', () => {
+  it('Feature: wertebarometer, Property 2: Konstante Bewertungen ergeben genau diese Bewertung', () => {
     fc.assert(
       fc.property(ratingArb, fc.array(positiveWeightArb, { minLength: 1 }), (r, ws) => {
         expect(computeIstScore(ws.map((weight) => ({ weight, rating: r })))).toBe(r);
@@ -48,7 +48,7 @@ describe('Ist-Score (Anforderung 9)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 3: Homogenität der Gewichtungen', () => {
+  it('Feature: wertebarometer, Property 3: Homogenität der Gewichtungen', () => {
     fc.assert(
       fc.property(contributionsWithPositive, fc.integer({ min: 1, max: 1000 }), (cs, k) => {
         const scaled = cs.map((c) => ({ ...c, weight: c.weight * k }));
@@ -58,7 +58,7 @@ describe('Ist-Score (Anforderung 9)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 4: Zuordnungen mit Gewichtung 0 sind neutral', () => {
+  it('Feature: wertebarometer, Property 4: Zuordnungen mit Gewichtung 0 sind neutral', () => {
     fc.assert(
       fc.property(contributionsWithPositive, ratingArb, (cs, r) => {
         expect(computeIstScore([...cs, { weight: 0, rating: r }])).toBe(computeIstScore(cs));
@@ -67,7 +67,7 @@ describe('Ist-Score (Anforderung 9)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 5: Rundung auf zwei Nachkommastellen ist idempotent', () => {
+  it('Feature: wertebarometer, Property 5: Rundung auf zwei Nachkommastellen ist idempotent', () => {
     fc.assert(
       fc.property(fc.double({ min: -10, max: 10, noNaN: true }), (x) => {
         expect(round2(round2(x))).toBe(round2(x));
@@ -76,7 +76,7 @@ describe('Ist-Score (Anforderung 9)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 6: "keine Daten" genau bei fehlender beitragender Zuordnung', () => {
+  it('Feature: wertebarometer, Property 6: "keine Daten" genau bei fehlender beitragender Zuordnung', () => {
     fc.assert(
       fc.property(fc.array(contributionArb), (cs) => {
         const hasPositive = cs.some((c) => c.weight > 0);
@@ -86,7 +86,7 @@ describe('Ist-Score (Anforderung 9)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 8: Monotone Schranken beim Hinzufügen einer Bewertung', () => {
+  it('Feature: wertebarometer, Property 8: Monotone Schranken beim Hinzufügen einer Bewertung', () => {
     fc.assert(
       fc.property(contributionsWithPositive, positiveWeightArb, ratingArb, (cs, w, r) => {
         const before = computeIstScoreRaw(cs)!;
@@ -163,7 +163,7 @@ const campaignArb = fc
   }));
 
 describe('Kampagnenergebnis (Anforderung 9 und 10)', () => {
-  it('Feature: kulturbarometer, Property 7: Perspektiven sind unabhängig', () => {
+  it('Feature: wertebarometer, Property 7: Perspektiven sind unabhängig', () => {
     fc.assert(
       fc.property(campaignArb, ratingArb, ({ items, participations }, newRating) => {
         const base = computeCampaignResult({
@@ -200,7 +200,7 @@ describe('Kampagnenergebnis (Anforderung 9 und 10)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 21: Score schließt alle Bewertungen deaktivierter Items aus', () => {
+  it('Feature: wertebarometer, Property 21: Score schließt alle Bewertungen deaktivierter Items aus', () => {
     fc.assert(
       fc.property(campaignArb, ({ items, participations }) => {
         const withAll = computeCampaignResult({
@@ -241,7 +241,7 @@ describe('Kampagnenergebnis (Anforderung 9 und 10)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 27: Anonymitätsschwelle unterdrückt alle Ergebnisse darunter', () => {
+  it('Feature: wertebarometer, Property 27: Anonymitätsschwelle unterdrückt alle Ergebnisse darunter', () => {
     fc.assert(
       fc.property(campaignArb, fc.integer({ min: 3, max: 10 }), ({ items, participations }, t) => {
         const result = computeCampaignResult({
@@ -278,7 +278,7 @@ describe('Kampagnenergebnis (Anforderung 9 und 10)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 28: Zwischenauswertung ändert sich nur in Stufen der Schwelle', () => {
+  it('Feature: wertebarometer, Property 28: Zwischenauswertung ändert sich nur in Stufen der Schwelle', () => {
     fc.assert(
       fc.property(campaignArb, fc.integer({ min: 3, max: 6 }), ({ items, participations }, t) => {
         const n = participations.length;
@@ -313,7 +313,7 @@ describe('Kampagnenergebnis (Anforderung 9 und 10)', () => {
 });
 
 describe('Verteilung und Perspektivdifferenzen (9.8–9.10)', () => {
-  it('Feature: kulturbarometer, Property 31: Verteilung ist konsistent mit den beitragenden Teilnehmern', () => {
+  it('Feature: wertebarometer, Property 31: Verteilung ist konsistent mit den beitragenden Teilnehmern', () => {
     fc.assert(
       fc.property(fc.array(ratingArb, { minLength: 1, maxLength: 50 }), (scores) => {
         const d = computeDistribution(scores)!;
@@ -329,7 +329,7 @@ describe('Verteilung und Perspektivdifferenzen (9.8–9.10)', () => {
     );
   });
 
-  it('Feature: kulturbarometer, Property 32: Perspektivdifferenzen sind antisymmetrisch und konsistent', () => {
+  it('Feature: wertebarometer, Property 32: Perspektivdifferenzen sind antisymmetrisch und konsistent', () => {
     const scoreOrNull = fc.option(fc.double({ min: 1, max: 5, noNaN: true }), { freq: 4 });
     fc.assert(
       fc.property(scoreOrNull, scoreOrNull, scoreOrNull, (s, t, f) => {

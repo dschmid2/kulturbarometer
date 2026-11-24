@@ -79,7 +79,7 @@ function AdminShell() {
         <NavLink
           to="/admin"
           className="wordmark"
-          aria-label="Kulturbarometer – Startseite der Administration"
+          aria-label="Wertebarometer – Startseite der Administration"
         >
           <Wordmark />
         </NavLink>

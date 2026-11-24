@@ -2,7 +2,7 @@
 
 ## Overview
 
-Das Kulturbarometer ist eine Webapplikation, die den gelebten Ist-Zustand der Unternehmenskultur erhebt. Sie besteht aus zwei klar getrennten Zugangsbereichen:
+Das Wertebarometer ist eine Webapplikation, die erhebt, wie stark die Unternehmenswerte im Alltag gelebt werden (Ist-Zustand). Sie besteht aus zwei klar getrennten Zugangsbereichen:
 
 - **Administrationsbereich** (authentifiziert): Verwaltung von Unternehmenswerten, Fokussätzen, KI-gestützter Item-Generierung und -Verfeinerung, Item-Export/-Import, Items samt Freigabe-Workflow, Kampagnen, Verteilung, Auswertung und Export.
 - **Teilnahmebereich** (anonym): Beantwortung der Umfrage einer aktiven Kampagne über einen öffentlichen Kampagnen-Link oder einen individuellen Einmal-Link.
@@ -703,7 +703,7 @@ Es wird ein mehrschichtiger, überwiegend automatisierter Testansatz verfolgt, d
 
 - Die unter "Correctness Properties" definierten Eigenschaften (Property 1–34) werden je als **ein** fast-check-Property-Test implementiert, mit mindestens **100 Iterationen** je Test.
 - Schwerpunkt auf der Ist-Score-Mathematik (Wertebereich, Homogenität, Neutralität von Gewicht 0, Idempotenz der Rundung, Perspektiven-Unabhängigkeit, monotone Schranken), der Teilmengen-Ziehung (Größe `min(n, aktive)`, Pool-/Aktivzugehörigkeit, Duplikatfreiheit), der Snapshot-Unveränderlichkeit samt Deaktivierung als einziger Mutation, dem Ausschluss deaktivierter Items in Score/Auswertung/CSV und dem Import-Round-Trip (Generatoren erzeugen Werte, gültige und ungültige Items sowie zufällig deaktivierte Item-Mengen und Abgabezeitpunkte).
-- Jeder Property-Test trägt einen Verweis auf die zugehörige Design-Eigenschaft im Format: **Feature: kulturbarometer, Property {Nummer}: {Property-Text}**.
+- Jeder Property-Test trägt einen Verweis auf die zugehörige Design-Eigenschaft im Format: **Feature: wertebarometer, Property {Nummer}: {Property-Text}**.
 
 ### Integrationstests (APIs)
 
