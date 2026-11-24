@@ -646,4 +646,142 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
       expect((await as('owner', ORG_B).get(`/api/admin/campaigns/${c.id}`)).status).toBe(403);
     });
   });
+  describe('Auswertung (Anforderung 9 und 10)', () => {
+    async function activeCampaign(threshold = 3) {
+      const v = await value('Vertrauen');
+      const ids: string[] = [];
+      for (const perspective of ['SELBST', 'TEAM']) {
+        const i = await item(v, { perspective });
+        await api().post(`/api/admin/items/${i.id}/approve`);
+        ids.push(i.id);
+      }
+      const c = (
+        await api().post('/api/admin/campaigns', {
+          title: 'Herbst 2026',
+          startDate: '2026-12-01',
+          endDate: '2026-12-20',
+        })
+      ).body as { id: string };
+      await api().put(`/api/admin/campaigns/${c.id}/pool`, { itemIds: ids });
+      await api().put(`/api/admin/campaigns/${c.id}`, {
+        title: 'Herbst 2026',
+        startDate: '2026-12-01',
+        endDate: '2026-12-20',
+        itemsPerParticipant: 2,
+        anonymityThreshold: threshold,
+      });
+      const act = await api().post(`/api/admin/campaigns/${c.id}/activate`);
+      const items = act.body.items as { id: string; perspective: string }[];
+      const sid = (p: string) => items.find((i) => i.perspective === p)!.id;
+      let seq = 0;
+      /** Legt eine Abgabe direkt in der Datenbank an (die öffentliche Umfrage folgt später). */
+      const submit = async (ratings: [string, number, string?][]) => {
+        seq++;
+        const [p] = await sql<{ id: string }[]>`
+          insert into participation (campaign_id, submission_seq, drawn_snapshot_item_ids)
+          values (${c.id}, ${seq}, ${ratings.map((r) => sid(r[0]))}) returning id`;
+        for (const [persp, rating, comment] of ratings) {
+          await sql`insert into answer_item (participation_id, snapshot_item_id, rating, comment)
+                    values (${p!.id}, ${sid(persp)}, ${rating}, ${comment ?? null})`;
+        }
+      };
+      return { id: c.id, valueId: v, submit };
+    }
+    const evaluation = async (id: string) =>
+      (await api().get(`/api/admin/campaigns/${id}/evaluation`)).body.evaluation;
+
+    it('zeigt Hinweise für Entwurf, keine Antworten und unter der Schwelle (10.6–10.8)', async () => {
+      const draft = (
+        await api().post('/api/admin/campaigns', {
+          title: 'Entwurf',
+          startDate: '2026-12-01',
+          endDate: '2026-12-20',
+        })
+      ).body;
+      expect(await evaluation(draft.id)).toEqual({ state: 'ENTWURF' });
+      const c = await activeCampaign();
+      expect(await evaluation(c.id)).toEqual({ state: 'KEINE_ANTWORTEN', provisional: true });
+      await c.submit([['SELBST', 4, 'Geheim']]);
+      await c.submit([['SELBST', 5]]);
+      const under = await evaluation(c.id);
+      expect(under).toEqual({
+        state: 'UNTER_SCHWELLE',
+        provisional: true,
+        totalParticipations: 2,
+        threshold: 3,
+      });
+      expect(JSON.stringify(under)).not.toContain('Geheim');
+    });
+
+    it('wertet stufenweise aus und unterdrückt Perspektiven unter der Schwelle (10.12–10.14)', async () => {
+      const c = await activeCampaign();
+      await c.submit([
+        ['SELBST', 4],
+        ['TEAM', 2, 'Zu wenig Austausch'],
+      ]);
+      await c.submit([
+        ['SELBST', 3],
+        ['TEAM', 3],
+      ]);
+      await c.submit([['SELBST', 5]]);
+      await c.submit([
+        ['SELBST', 1],
+        ['TEAM', 1],
+      ]);
+      const interim = await evaluation(c.id);
+      expect(interim).toMatchObject({
+        state: 'OK',
+        provisional: true,
+        totalParticipations: 4,
+        includedParticipations: 3,
+      });
+      const v = interim.values[0];
+      expect(v.perspectives.SELBST).toMatchObject({ shown: true, istScore: 4, contributors: 3 });
+      expect(v.perspectives.SELBST.distribution.classCounts).toEqual([0, 0, 1, 1, 1]);
+      expect(v.perspectives.TEAM).toEqual({ shown: false, reason: 'ZU_WENIGE_ANTWORTEN' });
+      expect(v.perspectives.FUEHRUNG).toEqual({ shown: false, reason: 'KEINE_DATEN' });
+      expect(v.gaps.selbstTeam).toBeNull();
+      expect(v.comments).toEqual({ shown: true, items: ['Zu wenig Austausch'] });
+
+      await api().post(`/api/admin/campaigns/${c.id}/close`);
+      const final = await evaluation(c.id);
+      expect(final).toMatchObject({ provisional: false, includedParticipations: 4 });
+      expect(final.values[0].perspectives.SELBST.istScore).toBe(3.25);
+      expect(final.values[0].perspectives.TEAM).toMatchObject({ shown: true, istScore: 2 });
+      expect(final.values[0].gaps.selbstTeam).toBe(1.25);
+      expect(final.deactivatedItems).toEqual([]);
+    });
+
+    it('liefert den Verlauf über abgeschlossene Kampagnen (10.4, 10.15, 10.20)', async () => {
+      const c = await activeCampaign();
+      for (const r of [3, 4, 5])
+        await c.submit([
+          ['SELBST', r],
+          ['TEAM', r - 1],
+        ]);
+      expect((await api().get('/api/admin/evaluation/trends')).body.campaigns).toEqual([]);
+      await api().post(`/api/admin/campaigns/${c.id}/close`);
+      const trends = (await api().get('/api/admin/evaluation/trends')).body;
+      expect(trends.campaigns).toHaveLength(1);
+      expect(trends.values[0]).toMatchObject({ valueId: c.valueId, name: 'Vertrauen' });
+      expect(trends.values[0].points[0].SELBST).toEqual({
+        istScore: 4,
+        stdDev: 0.82,
+        direction: null,
+      });
+      expect(trends.values[0].points[0].FUEHRUNG).toBeNull();
+    });
+
+    it('verlangt die Rolle Kampagnen-Administration und trennt Unternehmungen', async () => {
+      const c = await activeCampaign();
+      expect((await as('werte').get(`/api/admin/campaigns/${c.id}/evaluation`)).status).toBe(403);
+      expect((await as('werte').get('/api/admin/evaluation/trends')).status).toBe(403);
+      expect((await as('owner', ORG_B).get(`/api/admin/campaigns/${c.id}/evaluation`)).status).toBe(
+        403,
+      );
+      expect((await as('kampagnen').get(`/api/admin/campaigns/${c.id}/evaluation`)).status).toBe(
+        200,
+      );
+    });
+  });
 });

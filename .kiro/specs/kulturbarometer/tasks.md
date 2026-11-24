@@ -146,12 +146,12 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
     - Properties 11, 16, 18 und 29 sowie Beispieltests „Teilnahme-Ablauf“
     - _Requirements: 7.19, 8.1–8.14_
 
-- [ ] 12. Auswertung
-  - [ ] 12.1 Admin-API `getCampaignEvaluation`: Zwischen- und Endauswertung, Hinweise, Schwelle, Verteilung, Differenzen, Kommentare, deaktivierte Items; unterdrückte Werte verlassen den Server nicht
+- [x] 12. Auswertung
+  - [x] 12.1 Admin-API `getCampaignEvaluation`: Zwischen- und Endauswertung, Hinweise, Schwelle, Verteilung, Differenzen, Kommentare, deaktivierte Items; unterdrückte Werte verlassen den Server nicht
     - _Requirements: 9.1–9.10, 10.1–10.3, 10.6–10.14, 10.17, 10.19_
-  - [ ] 12.2 Admin-Oberfläche: Übersicht aller Werte mit drei Perspektiven auf gemeinsamer Skala, Detail je Wert mit drei Verteilungsdiagrammen (Recharts), Kennzahlen, hervorgehobene Differenzen, Kommentare, Tabellen als Textalternative
+  - [x] 12.2 Admin-Oberfläche: Übersicht aller Werte mit drei Perspektiven auf gemeinsamer Skala, Detail je Wert mit drei Verteilungsdiagrammen (Recharts), Kennzahlen, hervorgehobene Differenzen, Kommentare, Tabellen als Textalternative
     - _Requirements: 10.1–10.3, 10.6, 10.12–10.14, 10.16–10.18_
-  - [ ]* 12.3 Tests für die Auswertungs-API
+  - [x]* 12.3 Tests für die Auswertungs-API
     - Property 26 sowie Beispieltests „Anonymitätsschwelle und Zwischenauswertung“ und „Verteilung und Perspektiven“
     - _Requirements: 10.1–10.14_
 
