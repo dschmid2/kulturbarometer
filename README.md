@@ -89,6 +89,10 @@ Eingeladene Personen landen nach dem Klick auf den Einladungslink direkt bei **P
 
 Das Vercel-Projekt `wertebarometer` ist mit diesem Repository verbunden; Produktion unter https://wertebarometer.vercel.app (die frühere Adresse https://kulturbarometer.vercel.app bleibt erreichbar). Jeder Push erzeugt ein Deployment; `main` ist die Produktion, andere Branches erzeugen Vorschau-Deployments. Build-Einstellungen stehen in `vercel.json`.
 
+- **Produktion:** Neon (Datenbank und Anmeldung), Vercel-Funktionen in Frankfurt (`fra1`).
+- **Vorschauen** verwenden dieselbe Neon-Datenbank und dieselbe Anmeldung wie die Produktion. Änderungen in einer Vorschau wirken sich also auf die echten Daten aus. Neon Auth akzeptiert nur eingetragene Adressen: Für eine neue Vorschau-Adresse diese in der Neon-Konsole unter Auth → Domains hinzufügen. Für getrennte Vorschau-Daten eignen sich Neon-Branches (geplant).
+- **Lokale Entwicklung:** Neon Auth lehnt `localhost` ab (Produktionseinstellung). Lokal mit `AUTH_PROVIDER=supabase`/`VITE_AUTH_PROVIDER=supabase` und eigener Datenbank arbeiten oder für einen eigenen Neon-Branch mit Neon Auth `localhost` erlauben.
+
 ## Datenbank und Anbieterwechsel
 
 Die Anwendung ist nicht an einen Postgres-Anbieter gebunden:
