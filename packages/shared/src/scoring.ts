@@ -183,9 +183,24 @@ export function distributionClassOf(score: number): number {
   return idx;
 }
 
+/** Breite der Feinintervalle der Verteilungsgrafik; jede Verteilungsklasse umfasst genau 4 davon. */
+export const HISTOGRAM_BIN_WIDTH = 0.2;
+export const HISTOGRAM_BINS = 20;
+
+/**
+ * Feinintervall (0–19) eines Teilnehmer-Scores: 1,00–1,19 → 0, …, 4,80–5,00 → 19. Gerechnet in
+ * Hundertsteln des gerundeten Scores, damit die Grenzen exakt mit den Verteilungsklassen übereinstimmen.
+ */
+export function histogramBinOf(score: number): number {
+  const hundredths = Math.round(round2(score) * 100);
+  return Math.min(HISTOGRAM_BINS - 1, Math.max(0, Math.floor((hundredths - 100) / 20)));
+}
+
 export interface Distribution {
   classCounts: number[];
   classShares: number[];
+  /** Teilnehmer je Feinintervall à 0,20 (20 Werte); summiert je 4 ergibt es `classCounts`. */
+  histogram: number[];
   median: number;
   stdDev: number;
 }
@@ -194,10 +209,15 @@ export function computeDistribution(participantScores: readonly number[]): Distr
   const n = participantScores.length;
   if (n === 0) return null;
   const classCounts = [0, 0, 0, 0, 0];
-  for (const s of participantScores) classCounts[distributionClassOf(s)]!++;
+  const histogram = new Array<number>(HISTOGRAM_BINS).fill(0);
+  for (const s of participantScores) {
+    classCounts[distributionClassOf(s)]!++;
+    histogram[histogramBinOf(s)]!++;
+  }
   return {
     classCounts,
     classShares: classCounts.map((c) => Math.round((c / n) * 100)),
+    histogram,
     median: round2(median(participantScores)),
     stdDev: round2(populationStdDev(participantScores)),
   };

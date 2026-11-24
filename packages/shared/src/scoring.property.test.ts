@@ -318,6 +318,13 @@ describe('Verteilung und Perspektivdifferenzen (9.8–9.10)', () => {
       fc.property(fc.array(ratingArb, { minLength: 1, maxLength: 50 }), (scores) => {
         const d = computeDistribution(scores)!;
         expect(d.classCounts.reduce((a, b) => a + b, 0)).toBe(scores.length);
+        // Feinverteilung: gleiche Summe, und je 4 Feinintervalle ergeben genau eine Klasse
+        expect(d.histogram).toHaveLength(20);
+        expect(d.histogram.reduce((a, b) => a + b, 0)).toBe(scores.length);
+        for (let k = 0; k < 5; k++) {
+          const sum = d.histogram.slice(k * 4, k * 4 + 4).reduce((a, b) => a + b, 0);
+          expect(sum).toBe(d.classCounts[k]);
+        }
         expect(d.median).toBeGreaterThanOrEqual(round2(Math.min(...scores)));
         expect(d.median).toBeLessThanOrEqual(round2(Math.max(...scores)));
         expect(d.stdDev).toBeGreaterThanOrEqual(0);

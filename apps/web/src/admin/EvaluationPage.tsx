@@ -1,6 +1,7 @@
 import {
   CAMPAIGN_STATUS_LABELS,
   DISTRIBUTION_CLASS_LABELS,
+  HISTOGRAM_BIN_WIDTH,
   PERSPECTIVE_GAP_HIGHLIGHT,
   PERSPECTIVE_LABELS,
   PERSPECTIVES,
@@ -13,7 +14,7 @@ import {
 } from '@kb/shared';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
-import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Bar, BarChart, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { apiFetch } from '../lib/api';
 import { formatDate } from './CampaignsPage';
 import {
@@ -231,13 +232,13 @@ const GAP_LABELS: [keyof PerspectiveGaps, string][] = [
 function ValueDetail({ value: v, threshold }: { value: ValueEvaluation; threshold: number }) {
   // Gleiche y-Skala für die drei Verteilungen eines Werts (10.16)
   const maxShare = Math.max(
-    10,
+    5,
     ...PERSPECTIVES.flatMap((p) => {
       const c = v.perspectives[p];
-      return c.shown ? c.distribution.classShares : [];
+      return c.shown ? histogramShares(c.distribution).map((b) => b.share) : [];
     }),
   );
-  const yMax = Math.ceil(maxShare / 10) * 10;
+  const yMax = Math.ceil(maxShare / 5) * 5;
 
   return (
     <article className="panel value-eval" id={`wert-${v.valueId}`}>
@@ -316,8 +317,28 @@ function PerspectiveTile({
   );
 }
 
-const CLASS_TICKS = ['1–1,8', '1,8–2,6', '2,6–3,4', '3,4–4,2', '4,2–5'];
+/** Grenzen der fünf Verteilungsklassen auf der Skala (für Achse und Hintergrundbänder). */
+const CLASS_EDGES = [1, 1.8, 2.6, 3.4, 4.2, 5];
 
+/** Feinintervalle à 0,20 mit Anteil in Prozent (für Grafik und Tooltip). */
+function histogramShares(d: { histogram: number[] }) {
+  const n = d.histogram.reduce((a, b) => a + b, 0) || 1;
+  return d.histogram.map((count, i) => {
+    const from = 1 + i * HISTOGRAM_BIN_WIDTH;
+    return {
+      mid: Math.round((from + HISTOGRAM_BIN_WIDTH / 2) * 100) / 100,
+      from,
+      to: from + HISTOGRAM_BIN_WIDTH - 0.01,
+      count,
+      share: Math.round((count / n) * 1000) / 10,
+    };
+  });
+}
+
+/**
+ * Verteilung der Teilnehmer-Scores in 20 Feinintervallen à 0,20 (10.16, 10.21). Die fünf
+ * Verteilungsklassen liegen als abwechselnd getönte Bänder dahinter; je Klasse genau 4 Balken.
+ */
 function DistributionChart({
   perspective,
   cell,
@@ -327,26 +348,35 @@ function DistributionChart({
   cell: Extract<PerspectiveCell, { shown: true }>;
   yMax: number;
 }) {
-  const data = cell.distribution.classShares.map((share, i) => ({
-    name: CLASS_TICKS[i],
-    label: DISTRIBUTION_CLASS_LABELS[i],
-    share,
-    count: cell.distribution.classCounts[i],
-  }));
+  const data = histogramShares(cell.distribution);
   return (
     <div className="dist-chart" aria-hidden="true">
       <ResponsiveContainer width="100%" height={150}>
         <BarChart
           data={data}
-          margin={{ top: 8, right: 4, bottom: 0, left: -18 }}
-          barCategoryGap={4}
+          margin={{ top: 8, right: 8, bottom: 0, left: -18 }}
+          barCategoryGap="12%"
         >
+          {[1, 3].map((k) => (
+            <ReferenceArea
+              key={k}
+              x1={CLASS_EDGES[k]}
+              x2={CLASS_EDGES[k + 1]}
+              fill="rgba(21,20,43,0.05)"
+              stroke="none"
+              ifOverflow="extendDomain"
+            />
+          ))}
           <XAxis
-            dataKey="name"
+            dataKey="mid"
+            type="number"
+            domain={[1, 5]}
+            ticks={CLASS_EDGES}
+            tickFormatter={(t: number) => fmtTick(t)}
             tick={{ fontSize: 10, fill: 'rgba(21,20,43,0.6)' }}
             tickLine={false}
             axisLine={{ stroke: 'rgba(21,20,43,0.2)' }}
-            interval={0}
+            allowDecimals
           />
           <YAxis
             domain={[0, yMax]}
@@ -357,29 +387,35 @@ function DistributionChart({
             tickLine={false}
           />
           <Tooltip
-            cursor={{ fill: 'rgba(21,20,43,0.06)' }}
+            cursor={{ fill: 'rgba(21,20,43,0.08)' }}
             content={({ active, payload }) => {
               if (!active || !payload?.length) return null;
               const d = payload[0]!.payload as (typeof data)[number];
               return (
                 <div className="chart-tip">
-                  <strong>{d.label}</strong>
+                  <strong>
+                    {fmt(d.from)}–{fmt(d.to)}
+                  </strong>
                   <br />
-                  {d.count} {d.count === 1 ? 'Person' : 'Personen'} · {d.share} %
+                  {d.count} {d.count === 1 ? 'Person' : 'Personen'} ·{' '}
+                  {d.share.toLocaleString('de-CH')} %
                 </div>
               );
             }}
           />
-          <Bar dataKey="share" radius={[4, 4, 0, 0]} isAnimationActive={false}>
-            {data.map((d) => (
-              <Cell key={d.name} fill={PERSPECTIVE_COLORS[perspective]} />
-            ))}
-          </Bar>
+          <Bar
+            dataKey="share"
+            fill={PERSPECTIVE_COLORS[perspective]}
+            radius={[2, 2, 0, 0]}
+            isAnimationActive={false}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>
   );
 }
+
+const fmtTick = (t: number) => (Number.isInteger(t) ? String(t) : t.toLocaleString('de-CH'));
 
 function DistributionTable({ value: v }: { value: ValueEvaluation }) {
   return (
