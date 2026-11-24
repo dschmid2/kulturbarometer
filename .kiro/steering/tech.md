@@ -19,7 +19,7 @@ Dieses Dokument legt den verbindlichen Techstack des Wertebarometers fest. Spezi
 
 ## Datenbank
 
-- **Datenbank-Anbindung:** Supabase (PostgreSQL), Projekt `kulturbarometer` (Region eu-west-1)
+- **Datenbank-Anbindung:** Supabase (PostgreSQL), Projekt-Ref `lxuwfwbrlfofafwscojq` (Region eu-west-1)
 - **Zugriff aus dem Backend:** direkte Postgres-Verbindung mit `postgres` (postgres.js) für alle Abläufe, damit Transaktionen und Zeilensperren möglich sind. Auf Vercel über den Supabase-Connection-Pooler im Transaktionsmodus (Port 6543, `prepare: false`).
 - **Schema-Änderungen:** als SQL-Migrationen im Verzeichnis `supabase/migrations`.
 - **Row Level Security:** auf allen Tabellen aktiviert, ohne Policies für `anon`/`authenticated`. Das Frontend greift nie direkt auf Tabellen zu; nur das Backend liest und schreibt.
