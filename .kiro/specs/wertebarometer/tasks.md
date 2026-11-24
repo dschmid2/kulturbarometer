@@ -186,6 +186,11 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
   - [x] 15.4 Phase 3: Daten von Supabase nach Neon kopiert (Neon liest per `postgres_fdw` über eine temporäre Nur-Lese-Rolle; eine Transaktion; Schutz-Trigger nur dabei ausgesetzt); Mitgliedschaften und Plattform-Administratoren über die E-Mail-Adresse den Neon-Konten zugeordnet; Zeilenzahlen und Prüfsummen aller Tabellen identisch; temporäre Zugänge entfernt. Vor dem Umschalten (15.5) wird erneut kopiert
   - [x] 15.5 Phase 4: Produktion auf Neon umgeschaltet (`DATABASE_URL`, `AUTH_PROVIDER=neon`, Vercel-Region `fra1`); Daten unmittelbar davor erneut abgeglichen. Supabase bleibt vorerst als Rückfallebene unverändert; die Wertebarometer-Tabellen im Schema `public` von Supabase werden erst nach einer Bewährungszeit entfernt. Das Projekt „stimmung“ (Schema `stimmung`, Konten in Supabase Auth) bleibt unberührt; das Supabase-Projekt wird nicht gelöscht
 
+- [ ] 16. Nacharbeiten nach dem Wechsel zu Neon
+  - [x] 16.1 Aufgeräumt: Neon-Anmeldeeinstellungen gelten für alle Vorschauen; Neon Auth ohne `localhost`, ohne Google und ohne Selbstregistrierung
+  - [ ] 16.2 Nach rund zwei Wochen Bewährung (ab 24.11.2026): Wertebarometer-Tabellen im Schema `public` des Supabase-Projekts entfernen sowie die Supabase-Variablen in Vercel (`SUPABASE_*`, `VITE_SUPABASE_*`). Nicht anfassen: Schema `stimmung`, die `sb_*`-Funktionen und die Konten in Supabase Auth (gehören zu „stimmung“)
+  - [ ] 16.3 Optional: eigene Neon-Branches für Vorschauen, damit Vorschauen nicht auf die Produktionsdaten schreiben
+
 ## Nach dem Prototyp
 
 Diese Anforderungen sind im Design beschrieben, aber nicht Teil des ersten Prototyps:
