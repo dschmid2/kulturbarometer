@@ -1,6 +1,6 @@
 # Techstack
 
-Dieses Dokument legt den verbindlichen Techstack des Kulturbarometers fest. Spezifikation (Design, Tasks) und Implementierung richten sich danach.
+Dieses Dokument legt den verbindlichen Techstack des Wertebarometers fest. Spezifikation (Design, Tasks) und Implementierung richten sich danach.
 
 ## Frontend
 

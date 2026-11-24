@@ -122,7 +122,9 @@ function TrendCard({
   campaigns: TrendResult['campaigns'];
 }) {
   const data = campaigns.map((c, i) => {
-    const row: Record<string, unknown> = { name: c.title.replace(/^Kulturbarometer\s+/, '') };
+    const row: Record<string, unknown> = {
+      name: c.title.replace(/^(Kultur|Werte)barometer\s+/, ''),
+    };
     for (const p of PERSPECTIVES) row[p] = v.points[i]![p]?.istScore ?? null;
     return row;
   });
