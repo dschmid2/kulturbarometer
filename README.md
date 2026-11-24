@@ -79,6 +79,6 @@ Unter **Benutzer** ordnet eine Person mit der Rolle Benutzer-Administration ande
 
 ## Deployment
 
-Das Vercel-Projekt `kulturbarometer` ist mit diesem Repository verbunden. Jeder Push erzeugt ein Deployment; `main` ist die Produktion, andere Branches erzeugen Vorschau-Deployments. Build-Einstellungen stehen in `vercel.json`.
+Das Vercel-Projekt `wertebarometer` ist mit diesem Repository verbunden; Produktion unter https://wertebarometer.vercel.app (die frühere Adresse https://kulturbarometer.vercel.app bleibt erreichbar). Jeder Push erzeugt ein Deployment; `main` ist die Produktion, andere Branches erzeugen Vorschau-Deployments. Build-Einstellungen stehen in `vercel.json`.
 
 Datenbankänderungen werden als neue Datei in `supabase/migrations` angelegt und auf das Supabase-Projekt angewendet.
