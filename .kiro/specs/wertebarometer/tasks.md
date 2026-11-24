@@ -184,7 +184,7 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
   - [ ] 15.2 Phase 1: Neon-Projekt (Frankfurt) mit Managed Better Auth, Migrationen einspielen, Vercel-Region `fra1`
   - [ ] 15.3 Phase 2: `AuthProvider`/`AuthClient` für Neon Auth (Better Auth), inkl. Einladung und Passwort festlegen; Test in einer Vorschau-Umgebung
   - [ ] 15.4 Phase 3: Daten von Supabase nach Neon kopieren, Mitgliedschaften und Plattform-Administratoren über die E-Mail-Adresse den neuen Konten zuordnen
-  - [ ] 15.5 Phase 4: Produktion umschalten (`DATABASE_URL`, `AUTH_PROVIDER`), Supabase als Rückfallebene behalten, danach Wertebarometer-Daten aus Supabase entfernen
+  - [ ] 15.5 Phase 4: Produktion umschalten (`DATABASE_URL`, `AUTH_PROVIDER`), Supabase als Rückfallebene behalten, danach nur die Wertebarometer-Tabellen im Schema `public` aus Supabase entfernen. Das Projekt „stimmung“ (Schema `stimmung`, Konten in Supabase Auth) bleibt unberührt; das Supabase-Projekt wird nicht gelöscht
 
 ## Nach dem Prototyp
 
