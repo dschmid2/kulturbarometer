@@ -197,6 +197,59 @@ describe.skipIf(!TEST_DATABASE_URL)('Umfrage-Link und Teilnahme (Anforderung 7 u
     expect((await open(token, CODE_B)).body).toEqual({ state: 'UNAVAILABLE' });
   });
 
+  it('zieht ausgewogen je Wert und Perspektive und nennt die Zahl verfügbarer Fragen (8.18, 8.19)', async () => {
+    const values: string[] = [];
+    for (const name of ['Mut', 'Respekt', 'Klarheit']) {
+      values.push((await admin.post('/api/admin/values', { name, description: '' })).body.id);
+    }
+    const ids: string[] = [];
+    const valueOf = new Map<string, string>();
+    for (const [vi, v] of values.entries()) {
+      // Ungleich grosse Wertebestände: 12, 6 und 3 Fragen
+      const n = [12, 6, 3][vi]!;
+      for (let i = 0; i < n; i++) {
+        const it = await admin.post('/api/admin/items', {
+          text: `W${vi}-F${i}`,
+          itemType: 'FRAGE',
+          perspective: (['SELBST', 'TEAM', 'FUEHRUNG'] as const)[i % 3],
+          // Nebenwert mit kleinerer Gewichtung zählt nicht als Hauptwert
+          assignments: [
+            { valueId: v, weight: 80 },
+            { valueId: values[(vi + 1) % 3] ?? values[0]!, weight: 20 },
+          ].filter((a, idx, arr) => arr.findIndex((b) => b.valueId === a.valueId) === idx),
+        });
+        await admin.post(`/api/admin/items/${it.body.id}/approve`);
+        ids.push(it.body.id);
+        valueOf.set(`W${vi}-F${i}`, v);
+      }
+    }
+    const settings = { title: 'Balance', startDate: '2026-12-01', endDate: '2026-12-20' };
+    const c = (await admin.post('/api/admin/campaigns', settings)).body;
+    await admin.put(`/api/admin/campaigns/${c.id}/pool`, { itemIds: ids });
+    await admin.put(`/api/admin/campaigns/${c.id}`, {
+      ...settings,
+      itemsPerParticipant: 9,
+      anonymityThreshold: 3,
+    });
+    await admin.post(`/api/admin/campaigns/${c.id}/activate`);
+    const token = (await admin.post(`/api/admin/campaigns/${c.id}/link`)).body.token;
+
+    for (let run = 0; run < 8; run++) {
+      const code = `${'c'.repeat(30)}${run.toString().padStart(2, '0')}`;
+      const res = (await open(token, code)).body;
+      expect(res.poolSize).toBe(21);
+      expect(res.items).toHaveLength(9);
+      expect(res.items[0]).not.toHaveProperty('primaryValueId');
+      const perValue = new Map<string, number>();
+      for (const it of res.items as { text: string }[]) {
+        const v = valueOf.get(it.text)!;
+        perValue.set(v, (perValue.get(v) ?? 0) + 1);
+      }
+      // 9 Plätze auf 3 Werte: je 3 (der kleinste Wert hat genau 3 Fragen)
+      expect(values.map((v) => perValue.get(v) ?? 0)).toEqual([3, 3, 3]);
+    }
+  });
+
   it('verlangt für die Link-Verwaltung die Rolle Kampagnen-Administration', async () => {
     const id = await activeCampaign();
     await sql`update organization_member set roles = ${['WERTE']} where user_id = ${ADMIN.userId}`;

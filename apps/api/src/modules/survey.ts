@@ -11,7 +11,7 @@
 import { randomBytes, randomInt, createHash } from 'node:crypto';
 import {
   answerSubmissionSchema,
-  drawSubset,
+  drawBalanced,
   round2,
   type ItemType,
   type Perspective,
@@ -110,7 +110,14 @@ export interface SurveyItemDto {
 }
 
 export type OpenSurveyResult =
-  | { state: 'OK'; campaignId: string; title: string; items: SurveyItemDto[] }
+  | {
+      state: 'OK';
+      campaignId: string;
+      title: string;
+      items: SurveyItemDto[];
+      /** Anzahl der verfügbaren (aktiven) Fragen der Kampagne – für den Hinweis zur Auswahl. */
+      poolSize: number;
+    }
   | { state: 'UNAVAILABLE' }
   | { state: 'ALREADY_PARTICIPATED' };
 
@@ -143,13 +150,36 @@ async function campaignForToken(sql: Sql | Tx, token: string, lock = false) {
 }
 
 /** Aktive (nicht deaktivierte) Snapshot-Items der Kampagne, optional eingeschränkt. */
-async function activeItems(sql: Sql | Tx, campaignId: string, only?: string[]) {
-  return sql<SurveyItemDto[]>`
-    select id, text, item_type as "itemType", perspective
-    from snapshot_item
-    where campaign_id = ${campaignId} and deactivated_at is null
-      ${only ? sql`and id = any(${only}::uuid[])` : sql``}`;
+interface PoolItem extends SurveyItemDto {
+  /** Wert mit der höchsten Gewichtung; Grundlage der ausgewogenen Ziehung (8.18). */
+  primaryValueId: string;
 }
+
+async function activeItems(sql: Sql | Tx, campaignId: string, only?: string[]) {
+  return sql<PoolItem[]>`
+    select si.id, si.text, si.item_type as "itemType", si.perspective,
+           coalesce((select sa.value_id::text from snapshot_assignment sa
+                     where sa.snapshot_item_id = si.id
+                     order by sa.weight desc, sa.value_id limit 1), '') as "primaryValueId"
+    from snapshot_item si
+    where si.campaign_id = ${campaignId} and si.deactivated_at is null
+      ${only ? sql`and si.id = any(${only}::uuid[])` : sql``}`;
+}
+
+async function activeCount(sql: Sql | Tx, campaignId: string) {
+  const [row] = await sql<{ n: number }[]>`
+    select count(*)::int as n from snapshot_item
+    where campaign_id = ${campaignId} and deactivated_at is null`;
+  return row!.n;
+}
+
+/** Nur die für Teilnehmende bestimmten Felder ausgeben. */
+const toDto = ({ id, text, itemType, perspective }: PoolItem): SurveyItemDto => ({
+  id,
+  text,
+  itemType,
+  perspective,
+});
 
 export async function openSurvey(
   sql: Sql,
@@ -179,27 +209,36 @@ export async function openSurvey(
         campaignId: c.id,
         title: c.title,
         items: inOrder(items, session.drawn),
+        poolSize: await activeCount(tx, c.id),
       };
     }
 
-    // Erstes Öffnen: zufällige Teilmenge aus den aktiven Items ziehen (8.1)
+    // Erstes Öffnen: zufällige, ausgewogene Teilmenge aus den aktiven Items ziehen (8.1, 8.18):
+    // gleich viele Fragen je Hauptwert und darin je Perspektive
     const pool = await activeItems(tx, c.id);
     if (pool.length === 0) return { state: 'UNAVAILABLE' };
     const k = Math.min(c.itemsPerParticipant ?? pool.length, pool.length);
-    const drawn = drawSubset(
-      pool.map((i) => i.id),
+    const drawn = drawBalanced(
+      pool,
       k,
+      [(i) => i.primaryValueId, (i) => i.perspective],
       () => randomInt(0, 2 ** 32) / 2 ** 32,
-    );
+    ).map((i) => i.id);
     await tx`insert into survey_session (campaign_id, access_key_hash, drawn_snapshot_item_ids)
              values (${c.id}, ${hash}, ${drawn}::uuid[])`;
-    return { state: 'OK', campaignId: c.id, title: c.title, items: inOrder(pool, drawn) };
+    return {
+      state: 'OK',
+      campaignId: c.id,
+      title: c.title,
+      items: inOrder(pool, drawn),
+      poolSize: pool.length,
+    };
   });
 }
 
-const inOrder = (items: SurveyItemDto[], order: string[]) => {
+const inOrder = (items: PoolItem[], order: string[]) => {
   const byId = new Map(items.map((i) => [i.id, i]));
-  return order.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+  return order.flatMap((id) => (byId.has(id) ? [toDto(byId.get(id)!)] : []));
 };
 
 const submitSchema = participantCodeSchema.extend(answerSubmissionSchema.shape);

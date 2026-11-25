@@ -1510,3 +1510,10 @@ button.link-button:hover:not(:disabled) {
 .survey-notice h1 {
   margin-top: 0;
 }
+
+.survey-selection {
+  padding: 10px 14px;
+  border-radius: var(--radius-field);
+  background: var(--ka-lime-35);
+  border-left: 4px solid var(--ka-lime);
+}

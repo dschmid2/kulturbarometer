@@ -12,7 +12,7 @@ interface SurveyItem {
 }
 
 type OpenResult =
-  | { state: 'OK'; campaignId: string; title: string; items: SurveyItem[] }
+  | { state: 'OK'; campaignId: string; title: string; items: SurveyItem[]; poolSize: number }
   | { state: 'UNAVAILABLE' }
   | { state: 'ALREADY_PARTICIPATED' };
 
@@ -25,7 +25,7 @@ type View =
   | { kind: 'already' }
   | { kind: 'done' }
   | { kind: 'error'; message: string }
-  | { kind: 'survey'; campaignId: string; title: string; items: SurveyItem[] };
+  | { kind: 'survey'; campaignId: string; title: string; items: SurveyItem[]; poolSize: number };
 
 /** Perspektive als Kontext der Formulierung (8.2). */
 const PERSPECTIVE_CONTEXT: Record<Perspective, string> = {
@@ -120,7 +120,13 @@ export function SurveyPage() {
         body: { code },
       });
       if (r.state === 'OK') {
-        setView({ kind: 'survey', campaignId: r.campaignId, title: r.title, items: r.items });
+        setView({
+          kind: 'survey',
+          campaignId: r.campaignId,
+          title: r.title,
+          items: r.items,
+          poolSize: r.poolSize,
+        });
       } else setView({ kind: r.state === 'UNAVAILABLE' ? 'unavailable' : 'already' });
     } catch (e) {
       if (e instanceof ApiError && e.code === 'INVALID_LINK') setView({ kind: 'invalid' });
@@ -166,6 +172,7 @@ export function SurveyPage() {
             campaignId={view.campaignId}
             title={view.title}
             items={view.items}
+            poolSize={view.poolSize}
             onDone={() => setView({ kind: 'done' })}
             onState={(s) => setView({ kind: s === 'UNAVAILABLE' ? 'unavailable' : 'already' })}
             onReload={open}
@@ -191,6 +198,7 @@ function SurveyForm({
   campaignId,
   title,
   items,
+  poolSize,
   onDone,
   onState,
   onReload,
@@ -200,6 +208,7 @@ function SurveyForm({
   campaignId: string;
   title: string;
   items: SurveyItem[];
+  poolSize: number;
   onDone: () => void;
   onState: (s: 'UNAVAILABLE' | 'ALREADY_PARTICIPATED') => void;
   onReload: () => Promise<void>;
@@ -304,6 +313,19 @@ function SurveyForm({
           Wie stark werden unsere Werte im Alltag gelebt? Bewerten Sie jede Aussage auf der Skala
           von <strong>1 – trifft gar nicht zu</strong> bis <strong>5 – trifft voll zu</strong>.
           Zwischenwerte sind möglich.
+        </p>
+        <p className="survey-selection">
+          {items.length < poolSize ? (
+            <>
+              Sie erhalten eine <strong>zufällige Auswahl von {items.length}</strong> der {poolSize}{' '}
+              verfügbaren Fragen – ausgewogen über alle Werte und Perspektiven. Andere Teilnehmende
+              erhalten eine andere Auswahl.
+            </>
+          ) : (
+            <>
+              Sie beantworten alle <strong>{items.length} Fragen</strong> dieser Umfrage.
+            </>
+          )}
         </p>
         <p className="muted small">
           Die Umfrage ist anonym: Es werden weder Name noch E-Mail- oder IP-Adresse gespeichert. Ihr

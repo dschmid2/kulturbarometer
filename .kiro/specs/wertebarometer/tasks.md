@@ -149,6 +149,8 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
     - _Requirements: 7.19, 8.1–8.14_
   - [x] 11.5 Auswertung: Kommentare mit Perspektive und Item-Text, feste Reihenfolge
     - _Requirements: 10.3, 10.19_
+  - [x] 11.6 Ausgewogene Ziehung je Hauptwert und Perspektive (Property-Tests) und Hinweis „zufällige Auswahl von k der n Fragen“ zu Beginn der Umfrage
+    - _Requirements: 8.18, 8.19_
 
 - [x] 12. Auswertung
   - [x] 12.1 Admin-API `getCampaignEvaluation`: Zwischen- und Endauswertung, Hinweise, Schwelle, Verteilung, Differenzen, Kommentare, deaktivierte Items; unterdrückte Werte verlassen den Server nicht
