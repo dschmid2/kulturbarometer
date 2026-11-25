@@ -744,7 +744,16 @@ describe.skipIf(!TEST_DATABASE_URL)('Admin-API mit Datenbank', () => {
       expect(v.perspectives.TEAM).toEqual({ shown: false, reason: 'ZU_WENIGE_ANTWORTEN' });
       expect(v.perspectives.FUEHRUNG).toEqual({ shown: false, reason: 'KEINE_DATEN' });
       expect(v.gaps.selbstTeam).toBeNull();
-      expect(v.comments).toEqual({ shown: true, items: ['Zu wenig Austausch'] });
+      expect(v.comments).toEqual({
+        shown: true,
+        items: [
+          {
+            text: 'Zu wenig Austausch',
+            perspective: 'TEAM',
+            itemText: 'Ich halte zugesagte Termine ein',
+          },
+        ],
+      });
 
       await api().post(`/api/admin/campaigns/${c.id}/close`);
       const final = await evaluation(c.id);

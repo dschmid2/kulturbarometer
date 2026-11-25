@@ -8,6 +8,7 @@ import type {
   DeactivatedItemResult,
   Distribution,
   PerspectiveGaps,
+  ValueComment,
 } from './scoring.js';
 
 export type PerspectiveCell =
@@ -25,7 +26,8 @@ export interface ValueEvaluation {
   name: string;
   perspectives: Record<Perspective, PerspectiveCell>;
   gaps: PerspectiveGaps;
-  comments: { shown: true; items: string[] } | { shown: false; reason: 'ZU_WENIGE_ANTWORTEN' };
+  comments:
+    { shown: true; items: ValueComment[] } | { shown: false; reason: 'ZU_WENIGE_ANTWORTEN' };
 }
 
 export type CampaignEvaluation =

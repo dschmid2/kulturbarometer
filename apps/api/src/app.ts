@@ -6,6 +6,7 @@ import { db, type Sql } from './db/client.js';
 import { errorHandler } from './http/errors.js';
 import { campaignsRouter } from './modules/campaigns.js';
 import { evaluationRouter } from './modules/evaluation.js';
+import { campaignLinkRouter, surveyRouter } from './modules/survey.js';
 import { itemsRouter } from './modules/items.js';
 import { accountRouter, membersRouter } from './modules/organizations.js';
 import { valuesRouter } from './modules/values.js';
@@ -67,13 +68,13 @@ export function createApp(options: AppOptions = {}) {
   scoped.use(itemsRouter(sql));
   scoped.use(campaignsRouter(sql));
   scoped.use(evaluationRouter(sql));
+  scoped.use(campaignLinkRouter(sql));
   scoped.use(membersRouter(sql, () => provider().directory));
   admin.use(scoped);
   app.use('/api/admin', admin);
 
-  const publicRouter = Router();
-  // Teilnahme-Routen folgen in Aufgabe 10 und 11.
-  app.use('/api/public', publicRouter);
+  // Teilnahme: ohne Anmeldung (7, 8)
+  app.use('/api/public', surveyRouter(sql));
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ code: 'NOT_FOUND', message: 'Unbekannter Endpunkt.' });

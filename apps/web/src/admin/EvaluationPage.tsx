@@ -271,9 +271,17 @@ function ValueDetail({ value: v, threshold }: { value: ValueEvaluation; threshol
           {v.comments.items.length === 0 ? (
             <p className="muted small">Keine Kommentare.</p>
           ) : (
-            <ul>
-              {v.comments.items.map((text, i) => (
-                <li key={i}>{text}</li>
+            <ul className="comment-list">
+              {v.comments.items.map((c, i) => (
+                <li key={i}>
+                  <p className="comment-text">{c.text}</p>
+                  <p className="comment-context">
+                    <PerspectiveIcon perspective={c.perspective} size={12} />
+                    <span>{PERSPECTIVE_LABELS[c.perspective]}</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="comment-question">zu: {c.itemText}</span>
+                  </p>
+                </li>
               ))}
             </ul>
           )}
