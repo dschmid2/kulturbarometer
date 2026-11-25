@@ -10,11 +10,15 @@ export function BrandMark({ size = 27 }: { size?: number }) {
   );
 }
 
+/** Schriftzug mit Untertitel „by kulturarchitekt.ch“. */
 export function Wordmark() {
   return (
     <span className="wordmark">
       <BrandMark />
-      Wertebarometer
+      <span className="wordmark-text">
+        <span className="wordmark-title">Wertebarometer</span>
+        <span className="wordmark-sub">by kulturarchitekt.ch</span>
+      </span>
     </span>
   );
 }

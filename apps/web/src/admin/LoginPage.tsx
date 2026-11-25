@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { BrandMark, Wordmark } from '../BrandMark';
 import { auth, authConfigError } from '../lib/auth';
 
@@ -62,6 +63,9 @@ export function LoginPage() {
             Das Wertebarometer zeigt, wie Unternehmenswerte im Daily Business wirken – aus Sicht
             jeder einzelnen Person, des Teams und der Führung.
           </p>
+          <Link to="/so-funktionierts" className="login-more">
+            So funktioniert's →
+          </Link>
         </div>
         <svg className="login-shapes" viewBox="0 0 27 27" aria-hidden="true">
           <rect width="12" height="12" fill="#FF6A3D" />

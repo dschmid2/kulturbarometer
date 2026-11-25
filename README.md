@@ -12,6 +12,7 @@ Spezifikation: `.kiro/specs/wertebarometer/` (Anforderungen, Design, Umsetzungsp
 | `apps/api` | Express-Backend; auf Vercel als Function unter `/api` (`api/index.ts`) |
 | `packages/shared` | Gemeinsame Typen, Zod-Schemata und Fachlogik (Ist-Score, Verteilung, Anonymitätsschwelle) |
 | `db/migrations` | Datenbankschema als SQL-Migrationen (reines PostgreSQL) |
+| `docs/wertebarometer.md` | Beschreibung von Zweck und Ablauf; erscheint in der App unter „So funktioniert's“ (`/so-funktionierts`) und dient als Vorlage für kulturarchitekt.ch |
 
 ## Lokale Entwicklung
 

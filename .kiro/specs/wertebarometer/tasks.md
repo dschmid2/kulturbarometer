@@ -195,6 +195,10 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
   - [ ] 16.2 Nach rund zwei Wochen Bewährung (ab 24.11.2026): Wertebarometer-Tabellen im Schema `public` des Supabase-Projekts entfernen sowie die Supabase-Variablen in Vercel (`SUPABASE_*`, `VITE_SUPABASE_*`). Nicht anfassen: Schema `stimmung`, die `sb_*`-Funktionen und die Konten in Supabase Auth (gehören zu „stimmung“)
   - [ ] 16.3 Optional: eigene Neon-Branches für Vorschauen, damit Vorschauen nicht auf die Produktionsdaten schreiben
 
+- [x] 17. Auftritt und Beschreibung
+  - [x] 17.1 Schriftzug mit Untertitel „by kulturarchitekt.ch“ (Administration, Anmeldung, Umfrage)
+  - [x] 17.2 Seite „So funktioniert's“ zu Zweck und Ablauf: öffentlich unter `/so-funktionierts` (Link auf der Anmeldeseite) und als Menüpunkt in der Administration. Einzige Quelle ist `docs/wertebarometer.md`; derselbe Text dient als Werkzeugbeschreibung auf kulturarchitekt.ch
+
 ## Nach dem Prototyp
 
 Diese Anforderungen sind im Design beschrieben, aber nicht Teil des ersten Prototyps:
