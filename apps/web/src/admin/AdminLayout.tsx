@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState, type ReactNode } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Wordmark } from '../BrandMark';
+import { HowItWorksArticle } from '../info/HowItWorks';
 import { apiFetch } from '../lib/api';
 import { auth } from '../lib/auth';
 import { AccountPage, SetPasswordPage } from './AccountPage';
@@ -85,6 +86,7 @@ function AdminShell() {
   const { me, org, selectOrg, hasRole } = useWorkspace();
   const location = useLocation();
   const onAccount = location.pathname.startsWith('/admin/konto');
+  const onInfo = location.pathname.startsWith('/admin/so-funktionierts');
   const start = hasRole('WERTE')
     ? 'werte'
     : hasRole('KAMPAGNEN')
@@ -110,6 +112,7 @@ function AdminShell() {
           {hasRole('WERTE') && <NavLink to="/admin/fragen">Fragen</NavLink>}
           {hasRole('KAMPAGNEN') && <NavLink to="/admin/kampagnen">Kampagnen</NavLink>}
           {hasRole('KAMPAGNEN') && <NavLink to="/admin/auswertung">Auswertung</NavLink>}
+          <NavLink to="/admin/so-funktionierts">So funktioniert's</NavLink>
         </nav>
         <span className="spacer" />
         {me.organizations.length > 1 ? (
@@ -133,6 +136,8 @@ function AdminShell() {
       <main className="page" key={org?.id ?? 'none'}>
         {onAccount ? (
           <AccountPage />
+        ) : onInfo ? (
+          <HowItWorksArticle />
         ) : !org && !me.platformAdmin ? (
           <div className="empty">
             <h2>Noch keiner Unternehmung zugeordnet</h2>
