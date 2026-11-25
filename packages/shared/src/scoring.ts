@@ -262,7 +262,29 @@ export interface ValueResult {
   gaps: PerspectiveGaps;
   /** Teilnehmer, die zu mindestens einer Perspektive dieses Werts beitragen (10.14). */
   contributorsAny: number;
-  comments: string[];
+  comments: ValueComment[];
+}
+
+/** Anonymer Freitextkommentar mit Kontext: Perspektive und Text der kommentierten Frage (10.3). */
+export interface ValueComment {
+  text: string;
+  perspective: Perspective;
+  itemText: string;
+}
+
+const PERSPECTIVE_ORDER: Record<Perspective, number> = { SELBST: 0, TEAM: 1, FUEHRUNG: 2 };
+
+/**
+ * Feste Reihenfolge nach Perspektive, Frage und Kommentartext – unabhängig von der Abgabe-
+ * reihenfolge, damit sich Kommentare nicht einzelnen Teilnahmen zuordnen lassen.
+ */
+export function sortComments(comments: readonly ValueComment[]): ValueComment[] {
+  return [...comments].sort(
+    (a, b) =>
+      PERSPECTIVE_ORDER[a.perspective] - PERSPECTIVE_ORDER[b.perspective] ||
+      a.itemText.localeCompare(b.itemText, 'de', { numeric: true }) ||
+      a.text.localeCompare(b.text, 'de', { numeric: true }),
+  );
 }
 
 export interface DeactivatedItemResult {
@@ -313,9 +335,15 @@ export function computeCampaignResult(input: {
         distribution: computeDistribution(participantScores),
       };
     }
-    const comments = scorable
-      .filter((r) => r.comment && r.comment.trim() !== '' && weightFor(r.item, value.id) > 0)
-      .map((r) => r.comment as string);
+    const comments = sortComments(
+      scorable
+        .filter((r) => r.comment && r.comment.trim() !== '' && weightFor(r.item, value.id) > 0)
+        .map((r) => ({
+          text: r.comment as string,
+          perspective: r.item.perspective,
+          itemText: r.item.text ?? '',
+        })),
+    );
     return {
       valueId: value.id,
       name: value.name,

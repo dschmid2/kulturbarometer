@@ -127,26 +127,28 @@ Aufgaben mit `*` sind Tests, die für den Prototyp empfohlen, aber nicht zwingen
     - Properties 12, 17 und 19
     - _Requirements: 6.4, 6.5, 6.11–6.14, 6.26_
 
-- [ ] 10. Öffentlicher Kampagnen-Link
-  - [ ] 10.1 Admin-API und -Oberfläche: Link erzeugen und ersetzen, Link anzeigen und kopieren
-    - _Requirements: 7.1, 7.2, 7.15, 7.16_
-  - [ ] 10.2 Teilnahmekennung: Code im Local Storage plus Cookie, serverseitig nur als Hash je Kampagne
+- [x] 10. Öffentlicher Kampagnen-Link
+  - [x] 10.1 Admin-API und -Oberfläche: Link erzeugen und ersetzen, Link anzeigen und kopieren, Hinweis zum Best-Effort-Schutz
+    - _Requirements: 7.1, 7.2, 7.14, 7.15, 7.16_
+  - [x] 10.2 Teilnahmekennung: Code im Local Storage plus Cookie, serverseitig nur als SHA-256-Hash je Kampagne
     - _Requirements: 7.3, 7.4, 7.6, 7.14, 7.17_
-  - [ ]* 10.3 Property-Test für den Link
+  - [x]* 10.3 Tests für den Link (Integrationstests: höchstens ein gültiger Link, alter Link ungültig, Kennung gilt je Kampagne)
     - Property 30
     - _Requirements: 7.15–7.17_
 
-- [ ] 11. Umfrage beantworten
-  - [ ] 11.1 Public-API `openSurvey`: Link und Status prüfen, bestehende Session wiederverwenden oder Teilmenge ziehen, Hinweise „nicht verfügbar“, „ungültiger Link“, „bereits teilgenommen“
+- [x] 11. Umfrage beantworten
+  - [x] 11.1 Public-API `openSurvey`: Link und Status prüfen, bestehende Session wiederverwenden oder Teilmenge ziehen, Hinweise „nicht verfügbar“, „ungültiger Link“, „bereits teilgenommen“
     - _Requirements: 7.3, 7.4, 7.11–7.13, 8.1, 8.11, 8.12_
-  - [ ] 11.2 Public-API `submitAnswer` in einer Transaktion: Prüfungen, Antwort ohne Verweise speichern, Kennung als teilgenommen markieren, Session löschen
+  - [x] 11.2 Public-API `submitAnswer` in einer Transaktion: Prüfungen, Antwort ohne Verweise speichern, Kennung als teilgenommen markieren, Session löschen
     - _Requirements: 6.27, 8.2–8.10, 8.14, 7.19_
-  - [ ] 11.3 Teilnahme-Oberfläche: Item-Text mit Perspektive als Kontext, stufenloser Schieberegler ohne Startwert mit Tastaturbedienung, optionaler Kommentar, Zwischenstand im Local Storage, Bestätigung
+  - [x] 11.3 Teilnahme-Oberfläche: Item-Text mit Perspektive als Kontext, stufenloser Schieberegler ohne Startwert (einheitliche Leiste, Griff erst nach Bedienung) mit Tastaturbedienung, optionaler Kommentar mit Hinweis gegen identifizierende Angaben, Fortschritt, Zwischenstand im Local Storage, Bestätigung
     - Skalenbeschriftung: 1 = „trifft gar nicht zu“, 5 = „trifft voll zu“
-    - _Requirements: 8.2, 8.3, 8.5, 8.6, 8.13–8.16_
-  - [ ]* 11.4 Tests für den Teilnahme-Ablauf
+    - _Requirements: 8.2, 8.3, 8.5, 8.6, 8.13–8.17_
+  - [x]* 11.4 Tests für den Teilnahme-Ablauf (Integrationstests und Browser-Ablauf)
     - Properties 11, 16, 18 und 29 sowie Beispieltests „Teilnahme-Ablauf“
     - _Requirements: 7.19, 8.1–8.14_
+  - [x] 11.5 Auswertung: Kommentare mit Perspektive und Item-Text, feste Reihenfolge
+    - _Requirements: 10.3, 10.19_
 
 - [x] 12. Auswertung
   - [x] 12.1 Admin-API `getCampaignEvaluation`: Zwischen- und Endauswertung, Hinweise, Schwelle, Verteilung, Differenzen, Kommentare, deaktivierte Items; unterdrückte Werte verlassen den Server nicht

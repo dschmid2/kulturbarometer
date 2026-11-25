@@ -517,7 +517,8 @@ function FrozenCampaign({ campaign }: { campaign: CampaignDetail }) {
         {campaign.status === 'AKTIV' && (
           <>
             <p className="info">
-              Die Kampagne läuft. Der öffentliche Umfrage-Link folgt im nächsten Schritt.
+              Die Kampagne läuft. Verteilen Sie den Umfrage-Link unten, zum Beispiel per E-Mail oder
+              im Intranet.
             </p>
             {close.error && <p className="error">{firstError(close.error)}</p>}
             <button
@@ -536,6 +537,7 @@ function FrozenCampaign({ campaign }: { campaign: CampaignDetail }) {
           </>
         )}
       </div>
+      {campaign.status === 'AKTIV' && <SurveyLinkPanel campaignId={campaign.id} />}
       <Coverage entries={campaign.items.filter((i) => !i.deactivatedAt)} />
       <div className="panel">
         <h2>Eingefrorene Fragen</h2>
@@ -557,5 +559,100 @@ function FrozenCampaign({ campaign }: { campaign: CampaignDetail }) {
         </ul>
       </div>
     </>
+  );
+}
+
+interface CampaignLink {
+  token: string;
+  createdAt: string;
+}
+
+/** Öffentlicher Umfrage-Link: erzeugen, kopieren, ersetzen (Anforderung 7.2, 7.14–7.16). */
+function SurveyLinkPanel({ campaignId }: { campaignId: string }) {
+  const qc = useQueryClient();
+  const [copied, setCopied] = useState(false);
+  const link = useQuery({
+    queryKey: ['campaign-link', campaignId],
+    queryFn: () => apiFetch<CampaignLink | null>(`/admin/campaigns/${campaignId}/link`),
+  });
+  const create = useMutation({
+    mutationFn: () =>
+      apiFetch<CampaignLink>(`/admin/campaigns/${campaignId}/link`, { method: 'POST' }),
+    onSuccess: (l) => {
+      qc.setQueryData(['campaign-link', campaignId], l);
+      setCopied(false);
+    },
+  });
+  const url = link.data ? `${window.location.origin}/umfrage/${link.data.token}` : null;
+
+  const copy = async () => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="panel">
+      <h2>Umfrage-Link</h2>
+      {link.isLoading && <p className="muted">Laden …</p>}
+      {url ? (
+        <>
+          <div className="link-row">
+            <input
+              className="link-field"
+              value={url}
+              readOnly
+              aria-label="Umfrage-Link"
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <button type="button" onClick={copy}>
+              {copied ? 'Kopiert' : 'Kopieren'}
+            </button>
+          </div>
+          <p className="muted small">
+            Erzeugt am {new Date(link.data!.createdAt).toLocaleString('de-CH')}. Wer den Link hat,
+            kann teilnehmen – verteilen Sie ihn nur an den vorgesehenen Personenkreis.
+          </p>
+          <button
+            type="button"
+            className="secondary"
+            disabled={create.isPending}
+            onClick={() => {
+              if (
+                confirm(
+                  'Neuen Link erzeugen? Der bisherige Link funktioniert danach nicht mehr. Bereits abgegebene Antworten bleiben erhalten, und wer schon teilgenommen hat, kann auch über den neuen Link nicht erneut teilnehmen.',
+                )
+              )
+                create.mutate();
+            }}
+          >
+            Neuen Link erzeugen
+          </button>
+        </>
+      ) : (
+        !link.isLoading && (
+          <>
+            <p className="muted">Für diese Kampagne gibt es noch keinen Umfrage-Link.</p>
+            <button type="button" disabled={create.isPending} onClick={() => create.mutate()}>
+              Link erzeugen
+            </button>
+          </>
+        )
+      )}
+      {create.error && <p className="error">{firstError(create.error)}</p>}
+      <details className="table-alt">
+        <summary>Wie zuverlässig ist der Schutz vor Mehrfachteilnahme?</summary>
+        <p className="small">
+          Der Browser merkt sich die Teilnahme (gespeicherter Code und Cookie). Das ist ein
+          Best-Effort-Schutz: Mit einem privaten Fenster, einem anderen Browser oder Gerät oder nach
+          dem Löschen der Browserdaten ist eine erneute Teilnahme möglich. Gespeichert wird nur ein
+          anonymer Hash, nie Name, E-Mail- oder IP-Adresse.
+        </p>
+      </details>
+    </div>
   );
 }

@@ -135,6 +135,7 @@ describe('Auswertung mit Schwelle (Beispiele)', () => {
       id: 's1',
       perspective: 'SELBST',
       deactivatedAt: null,
+      text: 'Ich halte Zusagen ein.',
       assignments: [{ valueId: 'v', weight: 100 }],
     },
     {
@@ -183,7 +184,14 @@ describe('Auswertung mit Schwelle (Beispiele)', () => {
     expect(v.perspectives.TEAM).toEqual({ shown: false, reason: 'ZU_WENIGE_ANTWORTEN' });
     expect(v.perspectives.FUEHRUNG).toEqual({ shown: false, reason: 'KEINE_DATEN' });
     expect(v.gaps).toEqual({ selbstTeam: null, selbstFuehrung: null, teamFuehrung: null });
-    expect(v.comments).toEqual({ shown: true, items: Array(6).fill('gut') });
+    expect(v.comments).toEqual({
+      shown: true,
+      items: Array(6).fill({
+        text: 'gut',
+        perspective: 'SELBST',
+        itemText: 'Ich halte Zusagen ein.',
+      }),
+    });
   });
 
   it('Zwischenauswertung bezieht nur volle Stufen ein (10.12)', () => {
@@ -218,5 +226,25 @@ describe('Feinverteilung (Grafik)', () => {
     for (const s of [1, 1.79, 1.8, 2.59, 2.6, 3.39, 3.4, 4.19, 4.2, 5]) {
       expect(Math.floor(histogramBinOf(s) / 4)).toBe(distributionClassOf(s));
     }
+  });
+});
+
+describe('Kommentare mit Kontext (10.3)', () => {
+  it('sortiert nach Perspektive, Frage und Text – unabhängig von der Abgabereihenfolge', async () => {
+    const { sortComments } = await import('./scoring.js');
+    const sorted = sortComments([
+      { text: 'b', perspective: 'FUEHRUNG', itemText: 'Frage A' },
+      { text: 'z', perspective: 'SELBST', itemText: 'Frage B' },
+      { text: 'a', perspective: 'SELBST', itemText: 'Frage B' },
+      { text: 'x', perspective: 'SELBST', itemText: 'Frage A' },
+      { text: 'c', perspective: 'TEAM', itemText: 'Frage A' },
+    ]);
+    expect(sorted.map((c) => `${c.perspective}/${c.itemText}/${c.text}`)).toEqual([
+      'SELBST/Frage A/x',
+      'SELBST/Frage B/a',
+      'SELBST/Frage B/z',
+      'TEAM/Frage A/c',
+      'FUEHRUNG/Frage A/b',
+    ]);
   });
 });
