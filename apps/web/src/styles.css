@@ -1552,7 +1552,6 @@ button.link-button:hover:not(:disabled) {
   margin-top: 8px;
 }
 .prose {
-  max-width: 72ch;
   background: var(--ka-white);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
