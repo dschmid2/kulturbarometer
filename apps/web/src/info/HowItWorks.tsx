@@ -23,7 +23,7 @@ export function InfoPage() {
           Zur Anmeldung
         </Link>
       </header>
-      <main className="survey-main">
+      <main className="page">
         <HowItWorksArticle />
       </main>
     </div>
